@@ -35,7 +35,7 @@ export const VendorNegotiationModal: React.FC<VendorNegotiationModalProps> = ({
   onClose,
 }) => {
   const [discountGoal, setDiscountGoal] = useState<number>(15);
-  const [leverageStrategy, setLeverageStrategy] = useState<'VOLUME_DISCOUNT' | 'MULTI_YEAR' | 'BENCHMARK_COMPETITOR' | 'GROUP_CONSOLIDATION'>('GROUP_CONSOLIDATION');
+  const [leverageStrategy, setLeverageStrategy] = useState<'VOLUME_DISCOUNT' | 'MULTI_YEAR' | 'BENCHMARK_COMPETITOR' | 'GROUP_CONSOLIDATION'>('VOLUME_DISCOUNT');
   const [copied, setCopied] = useState<boolean>(false);
 
   const targetSpend = Math.round(annualSpend * (1 - discountGoal / 100));
@@ -49,29 +49,28 @@ export const VendorNegotiationModal: React.FC<VendorNegotiationModalProps> = ({
 
 Dear ${vendorName} Enterprise Accounts Team,
 
-We are conducting an annual vendor portfolio consolidation across Skandhanshi Group's 5 operating entities (Infra Projects, Interius Luxury Interiors, Desi Nutri Agro Foods, Wellness, and Horizon Living).
+We are conducting an annual vendor portfolio consolidation across ${company.name}'s operating entities.
 
 Our group-wide annual billing with ${vendorName} currently stands at ${formatCurrency(annualSpend, currency)}. Under our central procurement framework, we require a unified Master SLA with a ${discountGoal}% group tier adjustment (Target: ${formatCurrency(targetSpend, currency)}/annum) or standardized volume rebates.
 
-In return, we are prepared to designate ${vendorName} as the exclusive Tier-1 preferred provider across all our current and upcoming subsidiaries in Andhra Pradesh, Telangana, and Karnataka.
+In return, we are prepared to designate ${vendorName} as a preferred provider across our current and upcoming subsidiaries.
 
-Could we schedule a 15-minute executive sync this Thursday to formalize this agreement?
+Could we schedule a 15-minute executive sync this week to formalize this agreement?
 
 Sincerely,
 Central Procurement & Finance Directorate
-${company.name} Holdings
-Direct: treasury@skandhanshigroup.com`;
+${company.name}`;
 
       case 'BENCHMARK_COMPETITOR':
         return `Subject: Commercial Contract Review & Market Benchmark Alignment - ${vendorName}
 
 Dear ${vendorName} Account Management,
 
-As part of our Q3 SaaS and vendor optimization audit at ${company.name}, our financial analytics team reviewed current contract pricing for ${category}.
+As part of our vendor optimization review at ${company.name}, our team reviewed current contract pricing for ${category}.
 
-Our market intelligence benchmarks indicate that equivalent enterprise tiers are currently trading at ${formatCurrency(targetSpend, currency)} (${discountGoal}% below our current billing of ${formatCurrency(annualSpend, currency)}).
+Based on our own research into comparable pricing, we believe an adjustment to ${formatCurrency(targetSpend, currency)} (${discountGoal}% below our current billing of ${formatCurrency(annualSpend, currency)}) would better reflect fair market value.
 
-We strongly value our working relationship with ${vendorName}, but to maintain our current deployment without initiating a formal RFP for alternative market solutions, we request an alignment to ${formatCurrency(targetSpend, currency)} effective next renewal.
+We strongly value our working relationship with ${vendorName}, but to maintain our current deployment without initiating a formal RFP for alternative solutions, we request an alignment to ${formatCurrency(targetSpend, currency)} effective next renewal.
 
 Please let us know if your executive commercial team can approve this revised schedule.
 
@@ -149,17 +148,19 @@ ${company.name}`;
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-900 block">Select Negotiation Leverage Angle:</label>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <button
-              onClick={() => setLeverageStrategy('GROUP_CONSOLIDATION')}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                leverageStrategy === 'GROUP_CONSOLIDATION'
-                  ? 'border-blue-600 bg-blue-50/70 text-blue-950 font-semibold'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="font-bold block">🏢 Group-Wide Master SLA</span>
-              <span className="text-[11px] text-slate-500">Leverage 5 subsidiaries for bulk volume power</span>
-            </button>
+            {company.isGroup && (
+              <button
+                onClick={() => setLeverageStrategy('GROUP_CONSOLIDATION')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  leverageStrategy === 'GROUP_CONSOLIDATION'
+                    ? 'border-blue-600 bg-blue-50/70 text-blue-950 font-semibold'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="font-bold block">🏢 Group-Wide Master SLA</span>
+                <span className="text-[11px] text-slate-500">Leverage your subsidiaries for bulk volume power</span>
+              </button>
+            )}
 
             <button
               onClick={() => setLeverageStrategy('BENCHMARK_COMPETITOR')}

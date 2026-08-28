@@ -27,7 +27,7 @@ interface SavingsCenterProps {
   savings: SavingsOpportunity[];
   currency: CurrencyCode;
   userRole: UserRole;
-  company?: Company;
+  company: Company;
   onUpdateStatus: (id: string, newStatus: OpportunityStatus) => void;
   onOpenAlternativeEngine: (item: {
     itemName: string;
@@ -45,18 +45,7 @@ export const SavingsCenter: React.FC<SavingsCenterProps> = ({
   savings,
   currency,
   userRole,
-  company = {
-    id: 'comp-main',
-    name: 'Skandhanshi Group Holdings',
-    industry: 'Conglomerate',
-    size: '1000+',
-    headquarters: 'Hyderabad, Telangana',
-    currency: 'INR',
-    annualRevenue: 4610000000,
-    monthlyBurn: 145500000,
-    totalExpensesYear: 1746000000,
-    fiscalYear: 'FY 2026-27',
-  },
+  company,
   onUpdateStatus,
   onOpenAlternativeEngine,
   onTriggerAudit,

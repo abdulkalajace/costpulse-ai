@@ -84,23 +84,23 @@ export const ApprovalCostBurdenModal: React.FC<ApprovalCostBurdenModalProps> = (
   const [showRejectInput, setShowRejectInput] = useState<boolean>(false);
   const [copiedScript, setCopiedScript] = useState<boolean>(false);
 
-  // 1. Department Budget Headroom Calculation
+  // 1. Department Budget Headroom Calculation — only against a real budget
+  // for this department. No fabricated fallback: if no budget is on file,
+  // headroom is simply not shown rather than showing made-up numbers that
+  // could wrongly influence a real approval decision.
   const deptBudget = budgets.find(
     (b) => b.departmentName.toLowerCase() === deptName.toLowerCase() || b.departmentId === (exp?.departmentId || '')
-  ) || budgets[0] || {
-    allocatedAmount: 5000000,
-    spentAmount: 3800000,
-    varianceAmount: 1200000,
-  };
+  );
+  const hasBudgetData = Boolean(deptBudget);
 
-  const currentSpent = deptBudget.spentAmount;
-  const totalAllocated = deptBudget.allocatedAmount;
+  const currentSpent = deptBudget?.spentAmount || 0;
+  const totalAllocated = deptBudget?.allocatedAmount || 0;
   const postApprovalSpent = currentSpent + rawCost;
-  const currentUtilPct = Math.round((currentSpent / (totalAllocated || 1)) * 100);
-  const postUtilPct = Math.round((postApprovalSpent / (totalAllocated || 1)) * 100);
+  const currentUtilPct = totalAllocated > 0 ? Math.round((currentSpent / totalAllocated) * 100) : 0;
+  const postUtilPct = totalAllocated > 0 ? Math.round((postApprovalSpent / totalAllocated) * 100) : 0;
   const headroomRemainingBefore = totalAllocated - currentSpent;
   const headroomRemainingAfter = totalAllocated - postApprovalSpent;
-  const isBreaching = postUtilPct > 95;
+  const isBreaching = hasBudgetData && postUtilPct > 95;
 
   // 2. Multi-Year Total Cost of Ownership (TCO) & Amortization
   const multiplierAnnual = cadence === 'Monthly' ? 12 : cadence === 'Quarterly' ? 4 : 1;
@@ -118,8 +118,7 @@ export const ApprovalCostBurdenModal: React.FC<ApprovalCostBurdenModalProps> = (
       (category === 'Software & SaaS' && s.category === category && s.status === 'UNDERUTILIZED')
   );
 
-  // 4. Market Benchmark Calculation
-  const marketBenchmarkDiff = rawCost > 200000 ? 18 : 12; // simulated % above market median
+  // 4. User-adjustable negotiation target (no fabricated "market benchmark")
   const recommendedFairValue = Math.round(rawCost * (1 - discountPct / 100));
   const potentialSavingsIfNegotiated = rawCost - recommendedFairValue;
 
@@ -130,7 +129,7 @@ Dear ${vendorName} Account Team,
 
 We are currently reviewing the fiscal purchase requisition for ${title} submitted by our ${deptName} team (Total Value: ${formatCurrency(rawCost, currency)}).
 
-As part of Skandhanshi Group's consolidated vendor governance across our 5 operating subsidiaries, our treasury requires market benchmark alignment. Our current internal procurement cap for this tier is ${formatCurrency(recommendedFairValue, currency)} (a ${discountPct}% volume adjustment) or bundled multi-entity terms.
+As part of ${company.name}'s vendor governance${company.isGroup ? ' across our operating subsidiaries' : ''}, our treasury requires market benchmark alignment. Our current internal procurement cap for this tier is ${formatCurrency(recommendedFairValue, currency)} (a ${discountPct}% volume adjustment)${company.isGroup ? ' or bundled multi-entity terms' : ''}.
 
 Could we schedule a brief 10-minute sync this week to adjust this tier, or explore an annual upfront master service agreement?
 
@@ -257,7 +256,11 @@ CC: Procurement & Treasury Head, ${company.name}`;
                       {deptName} Budget Headroom Shift
                     </span>
                   </div>
-                  {isBreaching ? (
+                  {!hasBudgetData ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700">
+                      No Budget On File
+                    </span>
+                  ) : isBreaching ? (
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" /> Critical Budget Risk (&gt;95%)
                     </span>
@@ -268,6 +271,13 @@ CC: Procurement & Treasury Head, ${company.name}`;
                   )}
                 </div>
 
+                {!hasBudgetData ? (
+                  <p className="text-xs text-slate-500 pt-1">
+                    No budget has been set up for "{deptName}" yet, so headroom can't be checked against a cap. Set up a
+                    department budget to enable this check.
+                  </p>
+                ) : (
+                <>
                 {/* Progress Visualizer: Before vs After */}
                 <div className="space-y-2 pt-1">
                   <div className="flex justify-between text-xs">
@@ -301,6 +311,8 @@ CC: Procurement & Treasury Head, ${company.name}`;
                     </span>
                   </div>
                 </div>
+                </>
+                )}
               </div>
 
               {/* Justification & Context */}
@@ -323,16 +335,15 @@ CC: Procurement & Treasury Head, ${company.name}`;
               <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-2">
                 <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
                   <Scale className="w-4 h-4 text-blue-600" />
-                  <span>AI Contract Rate Intelligence vs Peer Companies</span>
+                  <span>Negotiation Target Calculator</span>
                 </div>
                 <p className="text-xs text-blue-800 leading-relaxed">
-                  Compared against 240+ verified contracts in our benchmark database, the requested rate of{' '}
-                  <strong>{formatCurrency(rawCost, currency)}</strong> is{' '}
-                  <span className="text-amber-800 font-bold">~{marketBenchmarkDiff}% above median</span> for mid-market
-                  enterprises.
+                  CostPulse doesn't have external market benchmark data for this vendor — use the slider below to set a
+                  target discount for negotiation based on your own judgment (e.g. seat utilization, contract tenure,
+                  or peer quotes you've gathered).
                 </p>
                 <div className="pt-2 flex items-center justify-between border-t border-blue-200/60 text-xs">
-                  <span className="text-blue-900 font-semibold">Recommended Fair Value:</span>
+                  <span className="text-blue-900 font-semibold">Target Rate ({discountPct}% off):</span>
                   <span className="font-bold text-emerald-700 text-sm">
                     {formatCurrency(recommendedFairValue, currency)} (Save {formatCurrency(potentialSavingsIfNegotiated, currency)})
                   </span>
