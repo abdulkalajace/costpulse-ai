@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Sliders,
   Database,
@@ -79,7 +79,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSignOut,
   onOpenAuthModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'ENVIRONMENT_DEMO' | 'COMPANY_PROFILE' | 'POLICIES' | 'INTEGRATIONS' | 'ACCOUNT_SECURITY'>('ENVIRONMENT_DEMO');
+  const [activeTab, setActiveTab] = useState<'ENVIRONMENT_DEMO' | 'COMPANY_PROFILE' | 'POLICIES' | 'INTEGRATIONS' | 'AI_USAGE' | 'ACCOUNT_SECURITY'>('ENVIRONMENT_DEMO');
   const [selectedDemoPreset, setSelectedDemoPreset] = useState<DemoScenarioPreset>('INFRA_CONGLOMERATE');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ title: string; desc: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -93,6 +93,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setToastMessage({ title, desc, type });
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  // AI Usage & Cost panel state — fetched lazily the first time that tab is opened.
+  const [aiUsage, setAiUsage] = useState<{
+    summary: {
+      totalCalls: number;
+      aiPoweredCalls: number;
+      totalTokens: number;
+      totalEstimatedCostUsd: number;
+      byEndpoint: Record<string, { calls: number; aiPoweredCalls: number; tokens: number }>;
+    };
+    recent: Array<{
+      id: string;
+      endpoint: string;
+      modelUsed: string | null;
+      aiPowered: boolean;
+      totalTokens: number | null;
+      estimatedCostUsd: string | null;
+      createdAt: string;
+    }>;
+  } | null>(null);
+  const [aiUsageLoading, setAiUsageLoading] = useState(false);
+  const [aiUsageError, setAiUsageError] = useState('');
+
+  useEffect(() => {
+    if (activeTab !== 'AI_USAGE' || aiUsage || aiUsageLoading) return;
+    setAiUsageLoading(true);
+    setAiUsageError('');
+    fetch('/api/ai/usage', { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load AI usage');
+        return res.json();
+      })
+      .then((data) => setAiUsage({ summary: data.summary, recent: data.recent }))
+      .catch(() => setAiUsageError('Could not load AI usage right now — try again in a moment.'))
+      .finally(() => setAiUsageLoading(false));
+  }, [activeTab, aiUsage, aiUsageLoading]);
 
   const handleSaveCompany = (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,6 +355,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           >
             <Zap className="w-4 h-4" />
             <span>Live Data Connectors & APIs</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('AI_USAGE')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 ${
+              activeTab === 'AI_USAGE'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>AI Usage & Cost</span>
           </button>
 
           <button
@@ -919,7 +967,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs text-slate-800">AWS / Google Cloud / Azure FinOps</span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
-                  ACTIVE
+                  AVAILABLE
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
@@ -931,7 +979,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs text-slate-800">Slack / Microsoft Teams Webhooks</span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                  CONFIGURED
+                  AVAILABLE
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
@@ -939,6 +987,131 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5: AI USAGE & COST */}
+      {/* ========================================================================= */}
+      {activeTab === 'AI_USAGE' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">
+          <div className="border-b border-slate-100 pb-4">
+            <h3 className="font-bold text-base text-slate-900">AI Usage & Estimated Cost</h3>
+            <p className="text-xs text-slate-500">
+              Every Gemini call this account has made — real calls and deterministic fallbacks alike — so AI spend is
+              actually visible, not just claimed.
+            </p>
+          </div>
+
+          {aiUsageLoading && (
+            <p className="text-xs text-slate-500">Loading usage…</p>
+          )}
+          {aiUsageError && (
+            <p className="text-xs text-rose-600">{aiUsageError}</p>
+          )}
+
+          {aiUsage && (
+            <>
+              <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-[11px] text-slate-500 font-medium">Total AI Calls</div>
+                  <div className="mt-1.5 text-xl font-bold text-slate-900">{aiUsage.summary.totalCalls}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-[11px] text-slate-500 font-medium">Real AI-Powered Calls</div>
+                  <div className="mt-1.5 text-xl font-bold text-slate-900">
+                    {aiUsage.summary.aiPoweredCalls} / {aiUsage.summary.totalCalls}
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    {aiUsage.summary.totalCalls - aiUsage.summary.aiPoweredCalls} used the deterministic fallback (no
+                    AI key configured, or a transient failure)
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-[11px] text-slate-500 font-medium">Total Tokens</div>
+                  <div className="mt-1.5 text-xl font-bold text-slate-900">
+                    {aiUsage.summary.totalTokens.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-[11px] text-slate-500 font-medium">Estimated Cost</div>
+                  <div className="mt-1.5 text-xl font-bold text-slate-900">
+                    ${aiUsage.summary.totalEstimatedCostUsd.toFixed(4)}
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-400">Directional estimate, not a billing figure</div>
+                </div>
+              </div>
+
+              {Object.keys(aiUsage.summary.byEndpoint).length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">By Endpoint</span>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
+                        <tr>
+                          <th className="py-2.5 px-4">Endpoint</th>
+                          <th className="py-2.5 px-4">Calls</th>
+                          <th className="py-2.5 px-4">AI-Powered</th>
+                          <th className="py-2.5 px-4">Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {Object.entries(aiUsage.summary.byEndpoint).map(([endpoint, stats]: [string, { calls: number; aiPoweredCalls: number; tokens: number }]) => (
+                          <tr key={endpoint}>
+                            <td className="py-2.5 px-4 font-semibold text-slate-900">{endpoint}</td>
+                            <td className="py-2.5 px-4 text-slate-700">{stats.calls}</td>
+                            <td className="py-2.5 px-4 text-slate-700">{stats.aiPoweredCalls}</td>
+                            <td className="py-2.5 px-4 text-slate-700">{stats.tokens.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Recent Calls</span>
+                {aiUsage.recent.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-xs text-slate-500">
+                    No AI calls yet. They'll show up here once you use a feature like the AI FinOps Audit, Ask Your
+                    Company AI, or Receipt Scan.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
+                        <tr>
+                          <th className="py-2.5 px-4">Time</th>
+                          <th className="py-2.5 px-4">Endpoint</th>
+                          <th className="py-2.5 px-4">Model</th>
+                          <th className="py-2.5 px-4">Tokens</th>
+                          <th className="py-2.5 px-4">Est. Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {aiUsage.recent.map((call) => (
+                          <tr key={call.id}>
+                            <td className="py-2.5 px-4 text-slate-500">{new Date(call.createdAt).toLocaleString()}</td>
+                            <td className="py-2.5 px-4 font-semibold text-slate-900">{call.endpoint}</td>
+                            <td className="py-2.5 px-4 text-slate-700">
+                              {call.aiPowered ? call.modelUsed || '—' : (
+                                <span className="text-slate-400 italic">fallback (no AI)</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700">{call.totalTokens?.toLocaleString() ?? '—'}</td>
+                            <td className="py-2.5 px-4 text-slate-700">
+                              {call.estimatedCostUsd ? `$${Number(call.estimatedCostUsd).toFixed(6)}` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

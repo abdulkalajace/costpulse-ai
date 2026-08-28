@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "./db";
-import { accounts, users } from "./schema";
+import { accounts, users, aiUsageLog } from "./schema";
 import { createId } from "./id";
 import {
   hashPassword,
@@ -227,6 +227,44 @@ router.put("/workspace", requireAuth, async (req, res) => {
   } catch (error: any) {
     console.error("put workspace error:", error.message);
     res.status(500).json({ success: false, error: "Failed to save workspace" });
+  }
+});
+
+/* ------------------------------ AI USAGE ------------------------------- */
+
+/** Real AI usage/cost visibility for this account — powers the Settings
+ * "AI Usage" panel. Returns aggregates plus the most recent calls. */
+router.get("/ai/usage", requireAuth, async (req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(aiUsageLog)
+      .where(eq(aiUsageLog.accountId, req.session!.accountId))
+      .orderBy(desc(aiUsageLog.createdAt))
+      .limit(200);
+
+    const totalCalls = rows.length;
+    const aiPoweredCalls = rows.filter((r) => r.aiPowered).length;
+    const totalTokens = rows.reduce((sum, r) => sum + (r.totalTokens || 0), 0);
+    const totalEstimatedCostUsd = rows.reduce((sum, r) => sum + (r.estimatedCostUsd ? Number(r.estimatedCostUsd) : 0), 0);
+
+    const byEndpoint: Record<string, { calls: number; aiPoweredCalls: number; tokens: number }> = {};
+    for (const r of rows) {
+      const bucket = byEndpoint[r.endpoint] || { calls: 0, aiPoweredCalls: 0, tokens: 0 };
+      bucket.calls += 1;
+      if (r.aiPowered) bucket.aiPoweredCalls += 1;
+      bucket.tokens += r.totalTokens || 0;
+      byEndpoint[r.endpoint] = bucket;
+    }
+
+    res.json({
+      success: true,
+      summary: { totalCalls, aiPoweredCalls, totalTokens, totalEstimatedCostUsd, byEndpoint },
+      recent: rows.slice(0, 50),
+    });
+  } catch (error: any) {
+    console.error("get ai usage error:", error.message);
+    res.status(500).json({ success: false, error: "Failed to load AI usage" });
   }
 });
 
