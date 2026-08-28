@@ -86,79 +86,11 @@ export const AppSyncView: React.FC<AppSyncViewProps> = ({
   );
   const [webhookResponse, setWebhookResponse] = useState<{ status: string; message: string } | null>(null);
 
-  // Ingested Logs State
-  const [ingestedLogs, setIngestedLogs] = useState<SyncIngestedRecord[]>([
-    {
-      id: 'log-01',
-      connectorId: 'sync-keka',
-      connectorName: 'Keka HR & Payroll',
-      category: 'PAYROLL_HR',
-      entityType: 'PAYROLL_RUN',
-      externalId: 'PAY-AUG-2026-001',
-      amount: 34500000,
-      currency: 'INR',
-      timestamp: '2 mins ago',
-      departmentTarget: 'CONSTRUCTION (EXECUTION)',
-      description: 'August Site Engineers & Field Crew Payroll Roster',
-      status: 'AUTO_ALLOCATED',
-    },
-    {
-      id: 'log-02',
-      connectorId: 'sync-tally',
-      connectorName: 'TallyPrime ERP',
-      category: 'ACCOUNTING_ERP',
-      entityType: 'ERP_INVOICE',
-      externalId: 'VCH-2026-9812',
-      amount: 1450000,
-      currency: 'INR',
-      timestamp: '8 mins ago',
-      departmentTarget: 'PROCUREMENT AND STORES',
-      description: 'UltraTech Cement 500 MT Bulk Offtake Ex-Plant Invoice',
-      status: 'AUTO_ALLOCATED',
-    },
-    {
-      id: 'log-03',
-      connectorId: 'sync-aws',
-      connectorName: 'AWS Cost Explorer',
-      category: 'CLOUD_INFRA',
-      entityType: 'CLOUD_BILL',
-      externalId: 'AWS-2026-08-BILL',
-      amount: 2130000,
-      currency: 'INR',
-      timestamp: '14 mins ago',
-      departmentTarget: 'IT',
-      description: 'AWS Enterprise Production Infrastructure Monthly Consumption',
-      status: 'AUTO_ALLOCATED',
-    },
-    {
-      id: 'log-04',
-      connectorId: 'sync-salesforce',
-      connectorName: 'Salesforce CRM',
-      category: 'SALES_CRM',
-      entityType: 'SALES_COMMISSION',
-      externalId: 'OPP-89410-COMM',
-      amount: 450000,
-      currency: 'INR',
-      timestamp: '22 mins ago',
-      departmentTarget: 'SALES AND MARKETING',
-      description: 'Villa Block C Booking Direct Agent Commission Payout',
-      status: 'AUTO_ALLOCATED',
-    },
-    {
-      id: 'log-05',
-      connectorId: 'sync-procore',
-      connectorName: 'Procore Construction OS',
-      category: 'PROJECT_OPS',
-      entityType: 'SITE_JOB_LOG',
-      externalId: 'WBS-03-CONC-042',
-      amount: 8400000,
-      currency: 'INR',
-      timestamp: '45 mins ago',
-      departmentTarget: 'CONSTRUCTION (EXECUTION)',
-      description: 'Silicon Valley Tower B Structural Pour Subcontractor Progress Billing #4',
-      status: 'AUTO_ALLOCATED',
-    },
-  ]);
+  // Ingested Logs State — starts empty for every real account. No sync has
+  // happened until the user actually connects a real connector; previously
+  // this was pre-seeded with 5 fabricated "N mins ago" sync events (fake
+  // payroll/ERP/AWS/Salesforce/Procore amounts) shown to every account.
+  const [ingestedLogs, setIngestedLogs] = useState<SyncIngestedRecord[]>([]);
 
   // Currency Formatter
   const formatCurrency = (amount: number) => {
@@ -369,9 +301,11 @@ export const AppSyncView: React.FC<AppSyncViewProps> = ({
             <span className="text-[11px] font-medium text-emerald-700 uppercase tracking-wider">
               Ingestion Health Score
             </span>
-            <div className="text-lg font-bold text-emerald-800 mt-1">99.8% Uptime</div>
+            <div className="text-lg font-bold text-emerald-800 mt-1">
+              {connectedCount > 0 ? 'Healthy' : 'No Sources Connected'}
+            </div>
             <span className="text-[10px] text-emerald-600 font-medium">
-              Zero unallocated drops in last 24h
+              {connectedCount > 0 ? 'No sync failures detected' : 'Connect a source to see health here'}
             </span>
           </div>
 
@@ -379,7 +313,9 @@ export const AppSyncView: React.FC<AppSyncViewProps> = ({
             <span className="text-[11px] font-medium text-purple-700 uppercase tracking-wider">
               Monthly Ingestion Volume
             </span>
-            <div className="text-lg font-bold text-purple-900 mt-1">172.5 MB / Mo</div>
+            <div className="text-lg font-bold text-purple-900 mt-1">
+              {totalIngestedRecords.toLocaleString()} records
+            </div>
             <span className="text-[10px] text-purple-600 font-medium">
               Real-time webhook & batch ETL
             </span>
@@ -521,8 +457,10 @@ export const AppSyncView: React.FC<AppSyncViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Middle: Active Data Streams Mapped into Departments */}
-                  {connector.dataStreams && connector.dataStreams.length > 0 && (
+                  {/* Middle: Active Data Streams Mapped into Departments — only
+                      shown once actually connected, never as a pre-configured
+                      default for an account that hasn't connected anything. */}
+                  {isConnected && connector.dataStreams && connector.dataStreams.length > 0 && (
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs">
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">
                         Mapped Department Streams
@@ -618,6 +556,13 @@ export const AppSyncView: React.FC<AppSyncViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {ingestedLogs.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center text-xs text-slate-500">
+                      No sync activity yet. Send a test event from the Universal Webhook API Console to see it here.
+                    </td>
+                  </tr>
+                )}
                 {ingestedLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="py-3 px-4 font-mono font-bold text-slate-900">
