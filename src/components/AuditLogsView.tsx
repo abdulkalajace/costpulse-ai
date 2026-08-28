@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
 import {
-  ShieldCheck,
   Search,
-  Filter,
-  Lock,
-  Clock,
-  User,
-  Activity,
-  FileCheck,
 } from 'lucide-react';
 import { AuditLog, UserRole } from '../types';
 
@@ -38,22 +31,15 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              Security, Compliance & Immutable Audit Trails
+              Audit Trail
             </h1>
-            <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
-              SOC2 Type II
+            <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+              {logs.length} events
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Complete cryptographic audit log of all status approvals, policy changes, financial exports, and AI prompt accesses.
+            A record of status changes, approvals, and system events for this account.
           </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 font-medium flex items-center gap-1.5 shadow-2xs">
-            <Lock className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Tamper-Resistant Storage</span>
-          </div>
         </div>
       </div>
 
@@ -83,10 +69,16 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
                 <th className="py-3 px-4 font-semibold">Action Performed</th>
                 <th className="py-3 px-4 font-semibold">Target Entity</th>
                 <th className="py-3 px-4 font-semibold">Event Details</th>
-                <th className="py-3 px-4 font-semibold">IP Address</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+              {filteredLogs.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 px-4 text-center font-sans text-slate-500">
+                    {logs.length === 0 ? 'No audit events yet.' : 'No events match your search.'}
+                  </td>
+                </tr>
+              )}
               {filteredLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3 px-4 text-slate-500">{log.timestamp}</td>
@@ -99,7 +91,6 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ logs }) => {
                   <td className="py-3 px-4 font-sans font-medium text-slate-800">{log.action}</td>
                   <td className="py-3 px-4 font-sans text-slate-700">{log.targetEntityName}</td>
                   <td className="py-3 px-4 font-sans text-slate-500 max-w-sm truncate">{log.details}</td>
-                  <td className="py-3 px-4 text-slate-400">{log.ipAddress}</td>
                 </tr>
               ))}
             </tbody>

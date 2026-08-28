@@ -112,22 +112,22 @@ export const MasterDashboard: React.FC<MasterDashboardProps> = ({
         </div>
 
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-xs">
-          <div className="text-xs text-gray-500 font-medium">AI Telemetry Health</div>
+          <div className="text-xs text-gray-500 font-medium">AI Usage</div>
           <div className="mt-2 text-2xl font-bold text-emerald-700 tracking-tight">
-            99.98%
+            View Details
           </div>
           <div className="mt-2 text-[11px] text-gray-500">
-            Gemini 3.7 Flash Model Active
+            See real AI call volume &amp; cost in Settings → AI Usage &amp; Cost
           </div>
         </div>
 
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-xs">
-          <div className="text-xs text-gray-500 font-medium">Security Audit Status</div>
+          <div className="text-xs text-gray-500 font-medium">Access Control</div>
           <div className="mt-2 text-2xl font-bold text-blue-700 tracking-tight">
-            SOC2 / RBAC
+            RBAC
           </div>
           <div className="mt-2 text-[11px] text-gray-500">
-            {auditLogs.length} immutable events logged
+            {auditLogs.length} audit events logged for this account
           </div>
         </div>
       </div>

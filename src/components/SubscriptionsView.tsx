@@ -18,6 +18,7 @@ interface SubscriptionsViewProps {
   subscriptions: Subscription[];
   currency: CurrencyCode;
   userRole: UserRole;
+  departments?: { name: string }[];
   onAddSubscription: (sub: Partial<Subscription>) => void;
   onOpenAlternativeEngine: (item: {
     itemName: string;
@@ -31,6 +32,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   subscriptions,
   currency,
   userRole,
+  departments = [],
   onAddSubscription,
   onOpenAlternativeEngine,
 }) => {
@@ -46,7 +48,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   const [seatsUsed, setSeatsUsed] = useState(40);
   const [annualCost, setAnnualCost] = useState(250000);
   const [category, setCategory] = useState('Productivity & Collaboration');
-  const [dept, setDept] = useState('Core Platform Engineering');
+  const [dept, setDept] = useState('');
   const [renewal, setRenewal] = useState('2026-12-31');
 
   const categories = ['ALL', 'Productivity & Collaboration', 'CRM & Sales', 'Analytics & Data', 'Customer Support', 'Design & UI/UX', 'Finance & Accounting'];
@@ -91,7 +93,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
       annualCost: Number(annualCost),
       monthlyCost: Math.round(Number(annualCost) / 12),
       renewalDate: renewal,
-      departmentName: dept,
+      departmentName: dept || 'Unassigned',
       category: category,
       status: Number(seatsUsed) < Number(seatsTotal) * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
       currency: 'INR',
@@ -367,17 +369,28 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
 
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Department</label>
-                <select
-                  value={dept}
-                  onChange={(e) => setDept(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                >
-                  <option value="Core Platform Engineering">Core Platform Engineering</option>
-                  <option value="Global Sales & Revenue">Global Sales & Revenue</option>
-                  <option value="Growth & Marketing">Growth & Marketing</option>
-                  <option value="Operations & Real Estate">Operations & Real Estate</option>
-                  <option value="Product Design & Research">Product Design & Research</option>
-                </select>
+                {departments.length > 0 ? (
+                  <select
+                    value={dept}
+                    onChange={(e) => setDept(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  >
+                    <option value="">Select…</option>
+                    {departments.map((d) => (
+                      <option key={d.name} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={dept}
+                    onChange={(e) => setDept(e.target.value)}
+                    placeholder="e.g. Engineering"
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">

@@ -158,6 +158,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           visible: true,
         },
         {
+          id: 'IMPORT' as NavTab,
+          label: 'Import Expenses (CSV)',
+          icon: Database,
+          visible: !isEmployee,
+        },
+        {
           id: 'SUBSCRIPTIONS' as NavTab,
           label: 'SaaS & Cloud FinOps',
           icon: Layers,

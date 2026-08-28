@@ -340,7 +340,9 @@ export function App() {
       entityType,
       details,
       timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      ipAddress: '192.168.1.104',
+      // No real client-IP capture is wired up yet — leave honestly blank
+      // rather than stamping every event with the same fake address.
+      ipAddress: '',
     };
     setAuditLogs((prev) => [newLog, ...prev]);
   };
@@ -403,19 +405,19 @@ export function App() {
       description: item.description || 'Imported Line Item',
       amount: item.amount || 0,
       currency: currency,
-      category: item.category || 'Software & SaaS',
-      subcategory: item.subcategory || 'Software Licenses',
-      departmentId: 'dept-eng',
-      departmentName: item.departmentName || 'Core Platform Engineering',
-      costCenter: 'CC-ENG',
+      category: item.category || 'Office Supplies & Misc',
+      subcategory: item.subcategory || 'General',
+      departmentId: 'dept-imported',
+      departmentName: item.departmentName || 'Unassigned',
+      costCenter: 'IMPORTED',
       vendorId: 'vnd-imp',
-      vendorName: item.vendorName || 'Corporate Supplier',
+      vendorName: item.vendorName || 'Unknown Vendor',
       date: item.date || new Date().toISOString().split('T')[0],
-      employeeName: item.employeeName || 'Finance Operations',
-      employeeId: 'usr-fin',
+      employeeName: item.employeeName || currentUser.name,
+      employeeId: currentUser.id,
       paymentMethod: 'Invoice NET30',
       approvalStatus: 'APPROVED',
-      recurring: item.recurring || 'Monthly',
+      recurring: item.recurring || 'One-Time',
       tags: ['batch-import'],
       aiAnomaly: item.aiAnomaly,
     }));
@@ -763,6 +765,9 @@ export function App() {
           expenses={expenses}
           currency={currency}
           userRole={currentUser.role}
+          currentUserName={currentUser.name}
+          currentUserDepartment={currentUser.departmentName}
+          departments={departments}
           budgets={budgets}
           subscriptions={subscriptions}
           company={selectedCompany}
@@ -786,6 +791,7 @@ export function App() {
           subscriptions={subscriptions}
           currency={currency}
           userRole={currentUser.role}
+          departments={departments}
           onAddSubscription={handleAddSubscription}
           onOpenAlternativeEngine={(item) => setAlternativeTarget(item)}
         />
@@ -798,6 +804,7 @@ export function App() {
           assets={assets}
           currency={currency}
           userRole={currentUser.role}
+          departments={departments}
           onAddAsset={handleAddAsset}
         />
       );
@@ -842,6 +849,8 @@ export function App() {
           procurements={procurements}
           currency={currency}
           userRole={currentUser.role}
+          currentUserName={currentUser.name}
+          departments={departments}
           budgets={budgets}
           subscriptions={subscriptions}
           company={selectedCompany}

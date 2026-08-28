@@ -86,15 +86,14 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
     if (!purchaseItem || !purchaseCost) return;
 
     onSubmitProcurement({
-      itemName: purchaseItem,
+      title: purchaseItem,
       category: 'Software & SaaS',
       departmentName: currentUser.departmentName,
-      requesterName: currentUser.name,
-      requesterId: currentUser.id,
+      requestedByName: currentUser.name,
       estimatedCost: Number(purchaseCost),
-      businessJustification: purchaseJustification,
+      justification: purchaseJustification,
       status: 'SUBMITTED',
-      urgency: 'MEDIUM',
+      urgency: 'NORMAL',
     });
 
     setPurchaseItem('');
@@ -240,6 +239,9 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {myAssets.length === 0 && (
+            <p className="text-xs text-slate-500 sm:col-span-2">No hardware or equipment assigned to you yet.</p>
+          )}
           {myAssets.map((asset) => (
             <div key={asset.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-700 flex-shrink-0">

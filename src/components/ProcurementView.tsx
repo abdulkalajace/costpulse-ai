@@ -21,6 +21,8 @@ interface ProcurementViewProps {
   procurements: ProcurementRequest[];
   currency: CurrencyCode;
   userRole: UserRole;
+  currentUserName?: string;
+  departments?: { name: string }[];
   budgets?: Budget[];
   subscriptions?: Subscription[];
   company?: Company;
@@ -35,6 +37,8 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   procurements,
   currency,
   userRole,
+  currentUserName,
+  departments = [],
   budgets = [],
   subscriptions = [],
   company,
@@ -46,11 +50,12 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
 }) => {
   const [showNewModal, setShowNewModal] = useState(false);
   const [title, setTitle] = useState('');
-  const [vendorName, setVendorName] = useState('Vendor Inc');
+  const [vendorName, setVendorName] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('Software & SaaS');
   const [cost, setCost] = useState('');
   const [justification, setJustification] = useState('');
   const [urgency, setUrgency] = useState<'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL'>('NORMAL');
+  const [dept, setDept] = useState('');
 
   const pendingRequests = procurements.filter(
     (p) => p.status === 'SUBMITTED' || p.status === 'MANAGER_APPROVED' || p.status === 'DEPT_APPROVED'
@@ -68,8 +73,8 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
       estimatedCost: Number(cost),
       justification,
       urgency,
-      requestedByName: 'Current User',
-      departmentName: 'Core Platform Engineering',
+      requestedByName: currentUserName || 'Unknown',
+      departmentName: dept || 'Unassigned',
       status: 'SUBMITTED',
       requestDate: new Date().toISOString().split('T')[0],
       approvalChain: [
@@ -325,6 +330,32 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                     <option value="CRITICAL">CRITICAL</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Department</label>
+                {departments.length > 0 ? (
+                  <select
+                    value={dept}
+                    onChange={(e) => setDept(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  >
+                    <option value="">Select…</option>
+                    {departments.map((d) => (
+                      <option key={d.name} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={dept}
+                    onChange={(e) => setDept(e.target.value)}
+                    placeholder="e.g. Engineering"
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                )}
               </div>
 
               <div>

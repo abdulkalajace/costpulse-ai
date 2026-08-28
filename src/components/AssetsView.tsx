@@ -17,6 +17,7 @@ interface AssetsViewProps {
   assets: Asset[];
   currency: CurrencyCode;
   userRole: UserRole;
+  departments?: { name: string }[];
   onAddAsset: (asset: Partial<Asset>) => void;
 }
 
@@ -24,6 +25,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   assets,
   currency,
   userRole,
+  departments = [],
   onAddAsset,
 }) => {
   const [filterType, setFilterType] = useState('ALL');
@@ -36,7 +38,8 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   const [type, setType] = useState<AssetType>('LAPTOP');
   const [serial, setSerial] = useState('');
   const [price, setPrice] = useState(150000);
-  const [location, setLocation] = useState('Bengaluru HQ - Floor 4');
+  const [location, setLocation] = useState('');
+  const [dept, setDept] = useState('');
   const [assignedName, setAssignedName] = useState('');
 
   const types = ['ALL', 'LAPTOP', 'MONITOR', 'PHONE', 'SERVER', 'VEHICLE'];
@@ -72,7 +75,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
       currency,
       purchaseDate: new Date().toISOString().split('T')[0],
       assignedToName: assignedName || undefined,
-      departmentName: 'Core Platform Engineering',
+      departmentName: dept || 'Unassigned',
       status: (assignedName ? 'ACTIVE' : 'IDLE') as AssetStatus,
       location: location,
       utilizationScore: assignedName ? 85 : 0,
@@ -328,14 +331,42 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Location</label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g. HQ Office"
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Department</label>
+                  {departments.length > 0 ? (
+                    <select
+                      value={dept}
+                      onChange={(e) => setDept(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                    >
+                      <option value="">Select…</option>
+                      {departments.map((d) => (
+                        <option key={d.name} value={d.name}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={dept}
+                      onChange={(e) => setDept(e.target.value)}
+                      placeholder="e.g. Engineering"
+                      className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                    />
+                  )}
+                </div>
               </div>
 
               <div>
