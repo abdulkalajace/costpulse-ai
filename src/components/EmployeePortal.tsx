@@ -308,6 +308,7 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                     <option value="Meals & Entertainment">Meals & Entertainment</option>
                     <option value="Office Supplies & Misc">Office Supplies & Misc</option>
                     <option value="Software & SaaS">Software & SaaS</option>
+                    <option value="AI Tools & Copilots">AI Tools & Copilots</option>
                   </select>
                 </div>
               </div>

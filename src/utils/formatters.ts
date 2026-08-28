@@ -1,4 +1,24 @@
-import { CurrencyCode } from '../types';
+import { CurrencyCode, Subscription } from '../types';
+
+/** Subscriptions renewing within `withinDays` days from now, soonest first.
+ * Shared between the sidebar renewal badge and the SaaS view's "Renewing
+ * Soon" panel so both agree on exactly the same real data. */
+export function getUpcomingRenewals(subscriptions: Subscription[], withinDays: number = 30): Subscription[] {
+  const now = Date.now();
+  const windowMs = withinDays * 24 * 60 * 60 * 1000;
+  return subscriptions
+    .filter((s) => {
+      const t = Date.parse(s.renewalDate);
+      return !Number.isNaN(t) && t >= now && t - now <= windowMs;
+    })
+    .sort((a, b) => Date.parse(a.renewalDate) - Date.parse(b.renewalDate));
+}
+
+export function daysUntil(dateStr: string): number {
+  const t = Date.parse(dateStr);
+  if (Number.isNaN(t)) return NaN;
+  return Math.ceil((t - Date.now()) / (24 * 60 * 60 * 1000));
+}
 
 export function formatCurrency(
   amount: number,

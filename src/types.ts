@@ -87,6 +87,7 @@ export interface Company {
 
 export type ExpenseCategory =
   | 'Software & SaaS'
+  | 'AI Tools & Copilots'
   | 'Cloud Infrastructure'
   | 'Hardware & Devices'
   | 'Property & Facilities'

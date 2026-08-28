@@ -308,6 +308,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
                     className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
                   >
                     <option value="Software & SaaS">Software & SaaS</option>
+                    <option value="AI Tools & Copilots">AI Tools & Copilots</option>
                     <option value="Cloud Infrastructure">Cloud Infrastructure</option>
                     <option value="Hardware & Devices">Hardware & Devices</option>
                     <option value="Property & Facilities">Property & Facilities</option>

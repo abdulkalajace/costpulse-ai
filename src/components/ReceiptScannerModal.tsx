@@ -20,6 +20,7 @@ interface ExtractedDraft {
 
 const CATEGORIES: ExpenseCategory[] = [
   'Software & SaaS',
+  'AI Tools & Copilots',
   'Cloud Infrastructure',
   'Hardware & Devices',
   'Property & Facilities',

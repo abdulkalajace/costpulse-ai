@@ -72,6 +72,7 @@ import { AuthModal } from './components/AuthModal';
 import { AuthGate } from './components/AuthGate';
 import * as api from './utils/api';
 import { WorkspaceData } from './utils/api';
+import { getUpcomingRenewals } from './utils/formatters';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { AlternativeEngineModal } from './components/AlternativeEngineModal';
 import { ReceiptScannerModal } from './components/ReceiptScannerModal';
@@ -1099,6 +1100,7 @@ export function App() {
           procurements.filter((p) => p.status === 'SUBMITTED' || p.status === 'MANAGER_APPROVED').length
         }
         anomaliesCount={expenses.filter((e) => e.isAnomaly).length}
+        renewalsSoonCount={getUpcomingRenewals(subscriptions, 30).length}
         companies={companies}
         selectedCompany={selectedCompany}
         onSelectCompany={(comp) => setSelectedCompany(comp)}

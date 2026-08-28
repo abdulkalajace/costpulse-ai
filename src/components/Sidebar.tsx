@@ -62,6 +62,7 @@ interface SidebarProps {
   potentialSavingsCount?: number;
   pendingApprovalsCount?: number;
   anomaliesCount?: number;
+  renewalsSoonCount?: number;
   companies?: Company[];
   selectedCompany?: Company;
   onSelectCompany?: (company: Company) => void;
@@ -81,6 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   potentialSavingsCount = 0,
   pendingApprovalsCount = 0,
   anomaliesCount = 0,
+  renewalsSoonCount = 0,
   companies = [],
   selectedCompany,
   onSelectCompany,
@@ -167,6 +169,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'SUBSCRIPTIONS' as NavTab,
           label: 'SaaS & Cloud FinOps',
           icon: Layers,
+          badge: renewalsSoonCount > 0 ? `${renewalsSoonCount} renewing` : undefined,
+          badgeColor: 'bg-amber-50 text-amber-700 font-bold border border-amber-200',
           visible: !isEmployee,
         },
         {

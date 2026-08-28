@@ -72,6 +72,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
   const categories = [
     'ALL',
     'Software & SaaS',
+    'AI Tools & Copilots',
     'Cloud Infrastructure',
     'Property & Facilities',
     'Hardware & Devices',

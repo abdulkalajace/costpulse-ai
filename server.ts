@@ -637,7 +637,7 @@ Provide JSON with:
 - amount
 - currency (INR or USD)
 - date (YYYY-MM-DD)
-- category (one of: 'Software & SaaS', 'Cloud Infrastructure', 'Hardware & Devices', 'Property & Facilities', 'Workforce & Contractors', 'Travel & Entertainment', 'Marketing & Ads', 'Utilities & Services', 'Legal & Insurance', 'Office Supplies & Misc')
+- category (one of: 'Software & SaaS', 'AI Tools & Copilots', 'Cloud Infrastructure', 'Hardware & Devices', 'Property & Facilities', 'Workforce & Contractors', 'Travel & Entertainment', 'Marketing & Ads', 'Utilities & Services', 'Legal & Insurance', 'Office Supplies & Misc'. Use 'AI Tools & Copilots' specifically for AI assistants/copilots/model API spend — e.g. ChatGPT, Claude, GitHub Copilot, Midjourney — not general SaaS.)
 - subcategory
 - anomalyFlag (null or description if price spike or duplicate risk detected)
 - suggestedCostCenter
