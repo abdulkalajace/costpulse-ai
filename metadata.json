@@ -1,0 +1,6 @@
+{
+  "name": "CostPulse AI - Company Cost Intelligence & Optimization",
+  "description": "AI-powered company cost intelligence, spend management, asset utilization, and autonomous cost optimization platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
