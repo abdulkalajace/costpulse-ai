@@ -211,30 +211,10 @@ Identified Cost Savings Opportunity:
 
       const result = await response.json();
 
-      let extracted = result.extractedItems || [];
-      if (extracted.length === 0) {
-        // Fallback items if empty
-        extracted = [
-          {
-            id: `item-${Date.now()}-1`,
-            itemType: 'EXPENSE_INVOICE',
-            title: `${currentDept.name} Monthly Operational Ingestion`,
-            category: 'OPERATIONS',
-            targetDepartmentId: currentDept.id,
-            targetDepartmentName: currentDept.name,
-            amount: Math.round(currentDept.monthlyBurn * 0.15),
-            currency: currency,
-            date: new Date().toISOString().split('T')[0],
-            vendorName: 'Apex Unified Services',
-            invoiceNumber: `INV-${Math.floor(10000 + Math.random() * 90000)}`,
-            description: `Extracted from ${selectedFile?.name || 'document'}`,
-            confidenceScore: 94,
-            isOverwriteWarning: false,
-            resolution: 'CREATE_NEW',
-            isApproved: true,
-          },
-        ];
-      }
+      // Show exactly what the server extracted — never inject a fabricated
+      // line item (fake vendor, fake invoice number) just because nothing
+      // was actually extracted. An empty result is a real, honest outcome.
+      const extracted: ParsedSyncItem[] = result.extractedItems || [];
 
       const hasOverwrites = extracted.some((i: ParsedSyncItem) => i.isOverwriteWarning);
 
@@ -258,28 +238,8 @@ Identified Cost Savings Opportunity:
       setItemsToSync(extracted);
     } catch (err) {
       console.error('Failed to parse document:', err);
-      // Construct resilient default items
-      const fallback: ParsedSyncItem[] = [
-        {
-          id: `item-${Date.now()}-1`,
-          itemType: 'EXPENSE_INVOICE',
-          title: `${currentDept.name} Operational Line Item`,
-          category: 'OPERATIONS',
-          targetDepartmentId: currentDept.id,
-          targetDepartmentName: currentDept.name,
-          amount: Math.round(currentDept.monthlyBurn * 0.12),
-          currency: currency,
-          date: new Date().toISOString().split('T')[0],
-          vendorName: 'Standard Enterprise Vendor',
-          invoiceNumber: `INV-${Date.now().toString().slice(-5)}`,
-          description: `Extracted line item from uploaded document`,
-          confidenceScore: 88,
-          isOverwriteWarning: false,
-          resolution: 'CREATE_NEW',
-          isApproved: true,
-        },
-      ];
-
+      // Honest failure state — never fabricate a "Standard Enterprise Vendor"
+      // line item just because the request failed.
       setExtractedDoc({
         id: `doc-${Date.now()}`,
         departmentId: currentDept.id,
@@ -290,11 +250,12 @@ Identified Cost Savings Opportunity:
         uploadedAt: new Date().toISOString(),
         uploadedByName: 'Authorized Lead',
         status: 'READY_FOR_APPROVAL',
-        extractedItems: fallback,
-        confidenceOverall: 88,
+        extractedItems: [],
+        aiExecutiveSummary: 'Something went wrong reading this document — please try again.',
+        confidenceOverall: 0,
         hasOverwriteWarnings: false,
       });
-      setItemsToSync(fallback);
+      setItemsToSync([]);
     } finally {
       setIsExtracting(false);
     }
@@ -697,14 +658,14 @@ Identified Cost Savings Opportunity:
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : itemsToSync.length > 0 ? (
                 <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2.5">
                   <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
                   <div className="text-xs">
                     <span className="font-bold">Clean Ingestion:</span> All {itemsToSync.length} extracted items are new unique entries. No data conflicts or overwrites found.
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Document Summary Info Bar */}
               <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
@@ -755,6 +716,12 @@ Identified Cost Savings Opportunity:
                 </div>
 
                 <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                  {itemsToSync.length === 0 && (
+                    <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-slate-500">
+                      No items were extracted from this document. Add expenses, budget changes, or workflows manually
+                      instead, or try again once AI is configured.
+                    </p>
+                  )}
                   {itemsToSync.map((item, idx) => {
                     const isOverwriting = item.isOverwriteWarning;
                     const isApproved = item.isApproved && item.resolution !== 'SKIP';

@@ -38,7 +38,13 @@ export const AiExecutiveReports: React.FC<AiExecutiveReportsProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reportType: type,
-          companyId: company.id,
+          company: { id: company.id, name: company.name, fiscalYear: company.fiscalYear },
+          metrics: {
+            totalExpensesYear: company.totalExpensesYear,
+            annualRevenue: company.annualRevenue,
+            potentialSavingsAnnual: potentialSavings,
+            openOpportunities: savings.length,
+          },
           currency,
         }),
       });

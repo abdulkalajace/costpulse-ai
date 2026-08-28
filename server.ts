@@ -6,6 +6,9 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import { attachSession, requireAuth } from "./server/auth";
 import { router as apiRouter } from "./server/routes";
+import { db } from "./server/db";
+import { aiUsageLog } from "./server/schema";
+import { eq, desc, gte } from "drizzle-orm";
 
 dotenv.config();
 
@@ -35,15 +38,29 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
+// Default model fallback chain for reasoning-heavy endpoints (chat, audit,
+// executive reports). Simple structured-extraction endpoints (receipt
+// categorization, alternative lookups) pass LITE_MODELS instead, trying the
+// cheapest/lightest model first since the task doesn't need deep reasoning —
+// this is the "use smaller/cheaper models for simple tasks" token-efficiency
+// rule in practice, not just a comment.
+const STANDARD_MODELS = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
+const LITE_MODELS = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-2.5-flash"];
+
 // Helper: Resilient Gemini invocation with automatic model fallback & retry
 async function generateWithRetryAndFallback(
   ai: GoogleGenAI,
   params: {
     contents: any;
     config?: any;
+    models?: string[];
   }
-): Promise<{ text: string; modelUsed: string } | null> {
-  const models = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
+): Promise<{
+  text: string;
+  modelUsed: string;
+  usage: { promptTokens: number | null; candidateTokens: number | null; totalTokens: number | null };
+} | null> {
+  const models = params.models || STANDARD_MODELS;
   let lastError: any = null;
 
   for (const model of models) {
@@ -55,7 +72,16 @@ async function generateWithRetryAndFallback(
       });
 
       if (response && response.text) {
-        return { text: response.text, modelUsed: model };
+        const usage = response.usageMetadata;
+        return {
+          text: response.text,
+          modelUsed: model,
+          usage: {
+            promptTokens: usage?.promptTokenCount ?? null,
+            candidateTokens: usage?.candidatesTokenCount ?? null,
+            totalTokens: usage?.totalTokenCount ?? null,
+          },
+        };
       }
     } catch (err: any) {
       lastError = err;
@@ -79,16 +105,92 @@ async function generateWithRetryAndFallback(
   return null;
 }
 
+// Rough per-1K-token USD pricing for the flash-tier model family this app
+// uses — good enough for a directional cost estimate in the usage panel,
+// not a billing-accurate figure (actual pricing varies by exact model/tier).
+const EST_PRICE_PER_1K_PROMPT_USD = 0.0001;
+const EST_PRICE_PER_1K_CANDIDATE_USD = 0.0004;
+
+function estimateCostUsd(promptTokens: number | null, candidateTokens: number | null): string | null {
+  if (promptTokens == null && candidateTokens == null) return null;
+  const cost =
+    ((promptTokens || 0) / 1000) * EST_PRICE_PER_1K_PROMPT_USD +
+    ((candidateTokens || 0) / 1000) * EST_PRICE_PER_1K_CANDIDATE_USD;
+  return cost.toFixed(6);
+}
+
+/** Fire-and-forget usage logging — never blocks or fails the actual AI response. */
+function logAiUsage(params: {
+  accountId: string;
+  endpoint: string;
+  modelUsed?: string | null;
+  aiPowered: boolean;
+  usage?: { promptTokens: number | null; candidateTokens: number | null; totalTokens: number | null } | null;
+}) {
+  const u = params.usage;
+  db.insert(aiUsageLog)
+    .values({
+      accountId: params.accountId,
+      endpoint: params.endpoint,
+      modelUsed: params.modelUsed || null,
+      aiPowered: params.aiPowered,
+      promptTokens: u?.promptTokens ?? null,
+      candidateTokens: u?.candidateTokens ?? null,
+      totalTokens: u?.totalTokens ?? null,
+      estimatedCostUsd: estimateCostUsd(u?.promptTokens ?? null, u?.candidateTokens ?? null),
+    })
+    .catch((err) => console.warn("Failed to log AI usage:", err.message));
+}
+
 // Health endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Lightweight in-memory cache for AI responses keyed by exactly what was
+// sent — re-running an audit against unchanged data returns the cached
+// result instead of spending tokens on an identical call. Intentionally
+// simple (single-process, TTL-based) rather than a distributed cache, since
+// this app runs as one Node process.
+const aiResponseCache = new Map<string, { expiresAt: number; payload: any }>();
+const AI_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCached(key: string): any | null {
+  const entry = aiResponseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    aiResponseCache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function setCached(key: string, payload: any) {
+  aiResponseCache.set(key, { expiresAt: Date.now() + AI_CACHE_TTL_MS, payload });
+}
+
+function hashKey(parts: unknown): string {
+  const str = JSON.stringify(parts);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return String(hash);
+}
+
 // 1. AI Comprehensive Cost Audit
 app.post("/api/ai/audit", requireAuth, async (req, res) => {
   try {
     const { company, expenses, subscriptions, assets, properties, vendors, currency = "INR" } = req.body;
+    const accountId = req.session!.accountId;
     const ai = getGeminiClient();
+
+    const cacheKey = `audit:${accountId}:${hashKey({ company, expenses, subscriptions, assets, properties, vendors })}`;
+    const cached = getCached(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, cached: true });
+    }
 
     if (ai) {
       const prompt = `You are a Chief Financial & Cost Intelligence AI for enterprises.
@@ -172,7 +274,8 @@ Instructions:
 
       if (genResult?.text) {
         const parsed = JSON.parse(genResult.text);
-        return res.json({
+        logAiUsage({ accountId, endpoint: "audit", modelUsed: genResult.modelUsed, aiPowered: true, usage: genResult.usage });
+        const payload = {
           success: true,
           data: parsed,
           opportunities: parsed.opportunities || [],
@@ -181,7 +284,9 @@ Instructions:
           topRisksDetected: parsed.topRisksDetected,
           aiPowered: true,
           modelUsed: genResult.modelUsed,
-        });
+        };
+        setCached(cacheKey, payload);
+        return res.json(payload);
       }
     }
 
@@ -290,6 +395,7 @@ Instructions:
         ? `Rule-based analysis of your own data found ${fallbackOpportunities.length} cost-cutting ${fallbackOpportunities.length === 1 ? "opportunity" : "opportunities"} across subscriptions and assets. Add a GEMINI_API_KEY for deeper AI-generated analysis.`
         : "No cost-cutting opportunities detected yet. Add expenses, subscriptions, or assets — the audit re-runs against your real data.";
 
+    logAiUsage({ accountId: req.session!.accountId, endpoint: "audit", aiPowered: false });
     res.json({
       success: true,
       data: {
@@ -344,15 +450,19 @@ Response Rules:
 4. Currency is ${companyContext?.currency || "INR"}. Format large sums naturally (e.g. ₹38.6L or ₹1.45 Cr / $1.2M).`;
 
     if (ai) {
+      // Only the last 6 turns are sent — enough for conversational context
+      // without re-billing tokens for the entire chat history on every turn.
+      const recentHistory = (history as any[]).slice(-6);
       const genResult = await generateWithRetryAndFallback(ai, {
         contents: [
           { text: `System Context:\n${rolePermissionsGuidance}\n\nAvailable Snapshot:\n${JSON.stringify(companyContext || {})}` },
-          ...history.map((h: any) => ({ text: `${h.sender === "user" || h.role === "user" ? "User" : "AI Cost Analyst"}: ${h.text || h.content}` })),
+          ...recentHistory.map((h: any) => ({ text: `${h.sender === "user" || h.role === "user" ? "User" : "AI Cost Analyst"}: ${h.text || h.content}` })),
           { text: `User Query: ${activeQuery}` },
         ],
       });
 
       if (genResult?.text) {
+        logAiUsage({ accountId: req.session!.accountId, endpoint: "chat", modelUsed: genResult.modelUsed, aiPowered: true, usage: genResult.usage });
         return res.json({
           success: true,
           reply: genResult.text,
@@ -364,6 +474,7 @@ Response Rules:
 
     // No Gemini key configured (or the model call failed) — be honest about
     // it rather than inventing numbers. Never fabricate spend/waste figures.
+    logAiUsage({ accountId: req.session!.accountId, endpoint: "chat", aiPowered: false });
     res.json({
       success: true,
       reply:
@@ -408,6 +519,7 @@ Include:
 
       const genResult = await generateWithRetryAndFallback(ai, {
         contents: prompt,
+        models: LITE_MODELS,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -454,6 +566,7 @@ Include:
           negotiationScript: `Inform ${currentVendor || "vendor"} that seat utilization is under review and price concessions are required.`,
         };
 
+        logAiUsage({ accountId: req.session!.accountId, endpoint: "alternative-engine", modelUsed: genResult.modelUsed, aiPowered: true, usage: genResult.usage });
         return res.json({
           success: true,
           data: parsed,
@@ -464,6 +577,7 @@ Include:
       }
     }
 
+    logAiUsage({ accountId: req.session!.accountId, endpoint: "alternative-engine", aiPowered: false });
     const fallbackAnalysis = {
       recommendationAction: "CONSOLIDATE",
       justification: `Based on active telemetry for ${itemName || "this service"}, significant license overlap or price escalation is observed.`,
@@ -571,6 +685,7 @@ If a field genuinely cannot be read from the document, leave it blank/zero rathe
           aiAnomalyNote: parsed.anomalyFlag || null,
         };
 
+        logAiUsage({ accountId: req.session!.accountId, endpoint: "categorize-receipt", modelUsed: genResult.modelUsed, aiPowered: true, usage: genResult.usage });
         return res.json({
           success: true,
           data: parsed,
@@ -584,6 +699,7 @@ If a field genuinely cannot be read from the document, leave it blank/zero rathe
     // No AI available (or nothing to extract from) — return an empty draft
     // rather than fabricated vendor/amount data, so nothing false ever gets
     // written to the user's real expense ledger.
+    logAiUsage({ accountId: req.session!.accountId, endpoint: "categorize-receipt", aiPowered: false });
     const fallbackExtracted = {
       vendorName: "",
       amount: 0,
@@ -630,11 +746,11 @@ app.post("/api/ai/executive-report", requireAuth, async (req, res) => {
     if (ai) {
       const prompt = `You are the AI Chief Cost Officer producing a formal executive report for:
 - Role: ${activeRole}
-- Period: ${period || "Q2 FY27"}
-- Company: ${company?.name || "ApexTech Global Systems"}
-- Metrics: ${JSON.stringify(metrics || {})}
+- Period: ${period || "current period"}
+- Company: ${company?.name || "the company"}
+- Metrics on file: ${JSON.stringify(metrics || {})}
 
-Write a comprehensive, data-rich Executive Report in Markdown format.
+Write a comprehensive Executive Report in Markdown format, grounded ONLY in the metrics provided above — never invent company names, vendor names, or figures not present in the metrics. If a metric needed for a section isn't provided, say so rather than guessing.
 Include:
 1. Executive Summary & Headline
 2. Why spending changed this month/quarter (Breakdown by Software, Cloud, Real Estate, Workforce)
@@ -647,6 +763,7 @@ Include:
       });
 
       if (genResult?.text) {
+        logAiUsage({ accountId: req.session!.accountId, endpoint: "executive-report", modelUsed: genResult.modelUsed, aiPowered: true, usage: genResult.usage });
         return res.json({
           success: true,
           markdown: genResult.text,
@@ -671,6 +788,7 @@ ${hasMetrics
 ## 2. Next Step
 Review the Expenses, Subscriptions, Assets, and Savings Center screens directly for your real, up-to-date figures. This deterministic fallback never fabricates spend, vendor, or savings figures.`;
 
+    logAiUsage({ accountId: req.session!.accountId, endpoint: "executive-report", aiPowered: false });
     res.json({
       success: true,
       markdown: defaultReport,
@@ -703,9 +821,9 @@ app.post("/api/ai/parse-department-document", requireAuth, async (req, res) => {
 
     const deptName = department?.name || "Target Department";
     const deptCode = department?.code || "DEP";
-    const currentBudget = department?.annualBudget || 10000000;
+    const currentBudget = department?.annualBudget || 0;
     const currentBurn = department?.monthlyBurn || Math.round(currentBudget / 12);
-    const currentHeadcount = department?.headcount || 10;
+    const currentHeadcount = department?.headcount || 0;
     const ai = getGeminiClient();
 
     if (ai && fileText && fileText.trim().length > 10) {
@@ -802,6 +920,7 @@ CRITICAL OVERWRITE RULES:
           confidenceScore: item.confidenceScore || 95,
         }));
 
+        logAiUsage({ accountId: req.session!.accountId, endpoint: "parse-department-document", modelUsed: genResult.modelUsed, aiPowered: true, usage: genResult.usage });
         return res.json({
           success: true,
           summary: parsed.summary || `Extracted ${processedItems.length} items from ${fileName}`,
@@ -813,160 +932,27 @@ CRITICAL OVERWRITE RULES:
       }
     }
 
-    // Heuristic deterministic fallback parser
-    const fallbackItems: any[] = [];
-    const isSheet = fileType === "SHEET" || fileType === "CSV" || fileName.toLowerCase().endsWith(".csv") || fileName.toLowerCase().endsWith(".xlsx");
-    const isInvoice = fileName.toLowerCase().includes("inv") || fileName.toLowerCase().includes("bill") || fileName.toLowerCase().includes("receipt");
-    const isBudget = fileName.toLowerCase().includes("budget") || fileName.toLowerCase().includes("pnl") || fileName.toLowerCase().includes("plan");
-
-    if (isInvoice || fileName.toLowerCase().includes("vendor")) {
-      fallbackItems.push({
-        id: `item-${Date.now()}-1`,
-        itemType: "EXPENSE_INVOICE",
-        title: `${deptName} Vendor Supply Invoice`,
-        category: "OPERATIONS",
-        targetDepartmentId: department?.id || "dep-1",
-        targetDepartmentName: deptName,
-        amount: Math.round(currentBurn * 0.15),
-        currency: currency,
-        date: new Date().toISOString().split("T")[0],
-        vendorName: "Apex Logistics & Materials Pvt Ltd",
-        invoiceNumber: `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-        description: `Verified operational expenditure extracted from ${fileName}`,
-        confidenceScore: 92,
-        isOverwriteWarning: false,
-        resolution: "CREATE_NEW",
-        isApproved: true,
-      });
-      fallbackItems.push({
-        id: `item-${Date.now()}-2`,
-        itemType: "SAVINGS_WORKFLOW",
-        title: `Volume Rate Renegotiation: ${deptName} Supply Contracts`,
-        category: "Procurement",
-        targetDepartmentId: department?.id || "dep-1",
-        targetDepartmentName: deptName,
-        annualSavingsTarget: Math.round(currentBudget * 0.08),
-        riskLevel: "LOW",
-        currency: currency,
-        description: `Standardize purchase order volume slabs to capture 8% tiered rebate.`,
-        confidenceScore: 88,
-        isOverwriteWarning: false,
-        resolution: "CREATE_NEW",
-        isApproved: true,
-      });
-    } else if (isBudget) {
-      const incomingAnnualBudget = Math.round(currentBudget * 1.12);
-      fallbackItems.push({
-        id: `item-${Date.now()}-1`,
-        itemType: "BUDGET_REVISION",
-        title: `${deptName} FY27 Revised Budget Allocation`,
-        category: "FINANCE_GOVERNANCE",
-        targetDepartmentId: department?.id || "dep-1",
-        targetDepartmentName: deptName,
-        amount: incomingAnnualBudget,
-        budgetCapChange: incomingAnnualBudget,
-        currency: currency,
-        date: new Date().toISOString().split("T")[0],
-        description: `Annual departmental spending limit revised in ${fileName}`,
-        confidenceScore: 96,
-        isOverwriteWarning: true,
-        overwriteReason: `This budget revision will modify ${deptName}'s annual spending limit and monthly burn rate.`,
-        diffFields: [
-          { field: "Annual Budget Limit", currentValue: `${currentBudget.toLocaleString()} ${currency}`, incomingValue: `${incomingAnnualBudget.toLocaleString()} ${currency}` },
-          { field: "Monthly Burn Rate", currentValue: `${currentBurn.toLocaleString()} ${currency}/mo`, incomingValue: `${Math.round(incomingAnnualBudget / 12).toLocaleString()} ${currency}/mo` },
-        ],
-        resolution: "OVERWRITE",
-        isApproved: true,
-      });
-      fallbackItems.push({
-        id: `item-${Date.now()}-2`,
-        itemType: "HEADCOUNT_UPDATE",
-        title: `${deptName} Approved Headcount Revision`,
-        category: "PEOPLE_ADMIN",
-        targetDepartmentId: department?.id || "dep-1",
-        targetDepartmentName: deptName,
-        headcountChange: currentHeadcount + 2,
-        currency: currency,
-        description: `Staffing allocation schedule extracted from ${fileName}`,
-        confidenceScore: 90,
-        isOverwriteWarning: true,
-        overwriteReason: `Will update active departmental headcount from ${currentHeadcount} to ${currentHeadcount + 2} staff members.`,
-        diffFields: [
-          { field: "Department Headcount", currentValue: `${currentHeadcount} Members`, incomingValue: `${currentHeadcount + 2} Members (+2 new roles)` },
-        ],
-        resolution: "OVERWRITE",
-        isApproved: true,
-      });
-    } else {
-      fallbackItems.push({
-        id: `item-${Date.now()}-1`,
-        itemType: "EXPENSE_INVOICE",
-        title: `${deptName} Operational Service Ingestion`,
-        category: "OPERATIONS",
-        targetDepartmentId: department?.id || "dep-1",
-        targetDepartmentName: deptName,
-        amount: Math.round(currentBurn * 0.12),
-        currency: currency,
-        date: new Date().toISOString().split("T")[0],
-        vendorName: "Enterprise Unified Services",
-        invoiceNumber: `DOC-${Math.floor(10000 + Math.random() * 90000)}`,
-        description: `Line item extracted from ${fileName}`,
-        confidenceScore: 90,
-        isOverwriteWarning: false,
-        resolution: "CREATE_NEW",
-        isApproved: true,
-      });
-      fallbackItems.push({
-        id: `item-${Date.now()}-2`,
-        itemType: "SAVINGS_WORKFLOW",
-        title: `Process Automation & Redundancy Trim for ${deptName}`,
-        category: "Process Optimization",
-        targetDepartmentId: department?.id || "dep-1",
-        targetDepartmentName: deptName,
-        annualSavingsTarget: Math.round(currentBudget * 0.05),
-        riskLevel: "LOW",
-        currency: currency,
-        description: `Auto-identified workflow optimization based on document line items.`,
-        confidenceScore: 89,
-        isOverwriteWarning: false,
-        resolution: "CREATE_NEW",
-        isApproved: true,
-      });
-    }
-
+    // No AI available (or no readable text in the document) — never fabricate
+    // budget revisions, headcount changes, or invoice line items. A previous
+    // version of this fallback invented specific vendor names, invoice
+    // numbers, and "budget overwrite" diffs with fake 90%+ confidence scores
+    // that a user could approve into their real department budget without
+    // realizing none of it came from the actual uploaded document.
+    logAiUsage({ accountId: req.session!.accountId, endpoint: "parse-department-document", aiPowered: false });
     res.json({
       success: true,
-      summary: `Successfully parsed ${fileName} with ${fallbackItems.length} structured departmental records extracted.`,
-      confidenceOverall: 92,
-      extractedItems: fallbackItems,
+      summary: "AI document parsing isn't available right now (no GEMINI_API_KEY configured, or the AI service is temporarily unavailable). No items were extracted — please add expenses, budget changes, or workflows manually, or try again once AI is configured.",
+      confidenceOverall: 0,
+      extractedItems: [],
       aiPowered: false,
     });
   } catch (error: any) {
     console.warn("Recovered from /api/ai/parse-department-document error:", error.message);
     res.json({
       success: true,
-      summary: `Extracted records from document with standard financial structure.`,
-      confidenceOverall: 85,
-      extractedItems: [
-        {
-          id: `item-${Date.now()}-err`,
-          itemType: "EXPENSE_INVOICE",
-          title: "Ingested Operational Line Item",
-          category: "OPERATIONS",
-          targetDepartmentId: req.body?.department?.id || "dep-1",
-          targetDepartmentName: req.body?.department?.name || "General Department",
-          amount: 50000,
-          currency: req.body?.currency || "INR",
-          date: new Date().toISOString().split("T")[0],
-          vendorName: "Document Vendor",
-          invoiceNumber: "INV-INGEST-01",
-          description: "Parsed document item",
-          confidenceScore: 80,
-          isOverwriteWarning: false,
-          resolution: "CREATE_NEW",
-          isApproved: true,
-        },
-      ],
+      summary: "Something went wrong parsing this document — please try again.",
+      confidenceOverall: 0,
+      extractedItems: [],
       aiPowered: false,
     });
   }

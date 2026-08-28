@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, jsonb, index, integer, boolean } from "drizzle-orm/pg-core";
 import { createId } from "./id";
 
 // Multi-tenant model: each signed-up organization is an `accounts` row (a
@@ -48,5 +48,29 @@ export const users = pgTable(
   },
   (table) => ({
     accountIdx: index("users_account_id_idx").on(table.accountId),
+  })
+);
+
+// Real, minimal AI usage/cost tracking — one row per Gemini call, written
+// right after the call resolves. Used to power the "AI Usage" panel in
+// Settings so token/cost spend is genuinely visible, not just claimed.
+export const aiUsageLog = pgTable(
+  "ai_usage_log",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    modelUsed: text("model_used"),
+    aiPowered: boolean("ai_powered").notNull(),
+    promptTokens: integer("prompt_tokens"),
+    candidateTokens: integer("candidate_tokens"),
+    totalTokens: integer("total_tokens"),
+    estimatedCostUsd: text("estimated_cost_usd"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    accountIdx: index("ai_usage_log_account_id_idx").on(table.accountId),
   })
 );
