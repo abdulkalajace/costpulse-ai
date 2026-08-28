@@ -178,8 +178,15 @@ export function getInitialRealProductionData(): EnterpriseAppData {
  * Returns the rich Demo Showcase dataset based on selected preset.
  */
 export function getDemoShowcaseData(preset: DemoScenarioPreset = 'INFRA_CONGLOMERATE'): EnterpriseAppData {
+  // The 39-department template is defined without a companyId (it's reused
+  // as a generic starting point); scope it to the default demo company here
+  // so per-company views (e.g. the executive dashboard's department table)
+  // can filter by companyId like they do for real accounts.
   const hydratedDepartments = ensureDepartmentsHaveUsersAndRules(
-    INFRA_39_DEPARTMENTS_TEMPLATE as Department[]
+    INFRA_39_DEPARTMENTS_TEMPLATE.map((dept) => ({
+      ...dept,
+      companyId: INITIAL_COMPANIES[0].id,
+    })) as Department[]
   );
 
   return {

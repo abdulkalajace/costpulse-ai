@@ -18,6 +18,11 @@ import { createId } from "./id";
 export const accounts = pgTable("accounts", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   name: text("name").notNull(),
+  // One of the canonical INDUSTRIES categories from src/types.ts (or a
+  // free-text custom label when the user picked "Other" at signup). Kept as
+  // a real column, not just inside `workspace`, so it can be queried across
+  // accounts for benchmarking/analytics without parsing JSON.
+  industry: text("industry").notNull().default(""),
   currency: text("currency").notNull().default("INR"),
   workspace: jsonb("workspace").notNull().default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),

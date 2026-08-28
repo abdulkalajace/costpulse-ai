@@ -105,7 +105,6 @@ export function App() {
   );
   const [currentUser, setCurrentUser] = useState<UserProfile>(initialData.currentUser);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
-  const [authModalTab, setAuthModalTab] = useState<'SIGN_IN' | 'SIGN_UP' | 'PERSONAS'>('PERSONAS');
   const [currentTab, setCurrentTab] = useState<NavTab>('DASHBOARD');
   const [currency, setCurrency] = useState<CurrencyCode>(initialData.currency || 'INR');
 
@@ -317,15 +316,9 @@ export function App() {
     }
   };
 
-  // Handler: Sign In
-  const handleSignIn = () => {
-    setAuthModalTab('SIGN_IN');
-    setIsAuthModalOpen(true);
-  };
-
-  // Handler: Open Switch Persona Modal
+  // Handler: Open Demo Persona Switcher (Demo Sandbox mode only — real
+  // sign-in/sign-up always happens through AuthGate).
   const handleOpenPersonaModal = () => {
-    setAuthModalTab('PERSONAS');
     setIsAuthModalOpen(true);
   };
 
@@ -1001,6 +994,7 @@ export function App() {
             company={selectedCompany}
             savings={savings}
             expenses={expenses}
+            departments={departments}
             currency={currency}
             onNavigateTab={(tab) => setCurrentTab(tab)}
             onUpdateOpportunityStatus={handleUpdateOpportunityStatus}
@@ -1039,7 +1033,7 @@ export function App() {
         userRole={currentUser.role}
         isAuthenticated={isAuthenticated}
         onSignOut={handleSignOut}
-        onSignIn={handleSignIn}
+        onSignIn={handleOpenPersonaModal}
         appMode={appMode}
         onToggleAppMode={() => handleSwitchAppMode(appMode === 'PRODUCTION' ? 'DEMO' : 'PRODUCTION')}
         onSelectTab={(tab) => setCurrentTab(tab)}
@@ -1065,7 +1059,7 @@ export function App() {
           currentUser={currentUser}
           isAuthenticated={isAuthenticated}
           onSignOut={handleSignOut}
-          onSignIn={handleSignIn}
+          onSignIn={handleOpenPersonaModal}
           currency={currency}
           appMode={appMode}
           onToggleAppMode={() => handleSwitchAppMode(appMode === 'PRODUCTION' ? 'DEMO' : 'PRODUCTION')}
@@ -1093,19 +1087,18 @@ export function App() {
       </div>
 
       {/* Auth & Role Switcher Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        initialTab={authModalTab}
-        isAuthenticated={isAuthenticated}
-        onSignOut={handleSignOut}
-        demoUsers={DEMO_USERS}
-        companies={companies}
-        selectedCompany={selectedCompany}
-        onSelectCompany={(comp) => setSelectedCompany(comp)}
-        currentUser={currentUser}
-        onSelectUser={handleSelectUser}
-      />
+      {appMode === 'DEMO' && (
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          demoUsers={DEMO_USERS}
+          companies={companies}
+          selectedCompany={selectedCompany}
+          onSelectCompany={(comp) => setSelectedCompany(comp)}
+          currentUser={currentUser}
+          onSelectUser={handleSelectUser}
+        />
+      )}
 
       {/* Global Natural Language Search Modal */}
       <GlobalSearchModal

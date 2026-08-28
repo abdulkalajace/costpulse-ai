@@ -5,7 +5,6 @@ import {
   Building2,
   ChevronDown,
   Globe,
-  KeyRound,
   Flame,
   Clock,
   Settings,
@@ -382,8 +381,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                   </div>
 
+                  {appMode === 'DEMO' && (
+                  <>
                   <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    Switch Executive Persona / Sign In
+                    Switch Demo Persona
                   </div>
                   <div className="space-y-1 max-h-48 overflow-y-auto">
                     {demoUsers.slice(0, 6).map((u) => (
@@ -422,19 +423,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </button>
                     ))}
                   </div>
+                  </>
+                  )}
 
                   <div className="pt-2 mt-2 border-t border-gray-100 space-y-1">
-                    <button
-                      onClick={() => {
-                        setShowRoleMenu(false);
-                        if (onOpenAuthModal) onOpenAuthModal();
-                      }}
-                      className="w-full py-1.5 px-2 text-left text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
-                    >
-                      <KeyRound className="w-3.5 h-3.5" />
-                      <span>Enterprise Sign In & Register Modal</span>
-                    </button>
-
                     {onSignOut && (
                       <button
                         onClick={() => {

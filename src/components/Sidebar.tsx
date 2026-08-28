@@ -399,11 +399,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-1">
-              {onOpenAuthModal && (
+              {onOpenAuthModal && appMode === 'DEMO' && (
                 <button
                   onClick={onOpenAuthModal}
                   className="px-1.5 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                  title="Switch Persona or Manage Identity"
+                  title="Switch Demo Persona"
                 >
                   Switch
                 </button>

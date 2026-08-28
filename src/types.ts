@@ -28,6 +28,28 @@ export type IndustryVertical =
   | 'HIGHER_EDUCATION'
   | 'HOTEL_HOSPITALITY';
 
+/** Canonical industry categories offered at signup, used for the company
+ * profile and later for AI recommendations, analytics, and benchmarking. */
+export const INDUSTRIES = [
+  'Real Estate & Construction',
+  'Manufacturing',
+  'IT & Software',
+  'Retail',
+  'E-commerce',
+  'Healthcare',
+  'Education',
+  'Finance & Banking',
+  'Logistics & Transportation',
+  'Hospitality',
+  'Professional Services',
+  'Media & Entertainment',
+  'Agriculture',
+  'Automotive',
+  'Other',
+] as const;
+
+export type IndustryCategory = (typeof INDUSTRIES)[number];
+
 export interface Company {
   id: string;
   name: string;

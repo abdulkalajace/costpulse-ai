@@ -8,7 +8,9 @@ import {
   ProcurementRequest,
   CurrencyCode,
   OpportunityAction,
+  Department,
 } from '../types';
+import { formatCurrency } from '../utils/formatters';
 
 export interface QuickCostCut {
   id: string;
@@ -29,10 +31,10 @@ export interface CompanyIntelligenceProfile {
   companyId: string;
   monthlyBurn: number;
   dailyBurnVelocity: number;
-  cashRunwayMonths: number;
+  cashRunwayMonths: number | null;
   annualRevenue: number;
   annualSpend: number;
-  costRevenueRatio: number;
+  costRevenueRatio: number | null;
   totalIdentifiedWaste: number;
   targetSavingsAnnual: number;
   confirmedSavingsAnnual: number;
@@ -502,16 +504,21 @@ export const COMPANY_SAVINGS_MAP: Record<string, SavingsOpportunity[]> = {
 // ----------------------------------------------------------------------------
 export function getCompanyIntelligence(
   company: Company,
-  activeSavings: SavingsOpportunity[] = []
+  activeSavings: SavingsOpportunity[] = [],
+  realExpenses: Expense[] = [],
+  realDepartments: Department[] = []
 ): CompanyIntelligenceProfile {
   const companyId = company.id;
   const isGroup = Boolean(company.isGroup);
 
-  // Determine specific savings for this company
+  // Determine specific savings for this company. Real accounts only ever see
+  // their own real savings opportunities (from a real AI audit or manual
+  // entry) — never a fabricated fallback dataset. The COMPANY_SAVINGS_MAP is
+  // exclusively for the opt-in Demo Sandbox's fixed demo company IDs.
   const companySavings =
-    activeSavings.length > 0 && activeSavings.some((s) => s.companyId === companyId)
+    activeSavings.length > 0
       ? activeSavings.filter((s) => s.companyId === companyId)
-      : COMPANY_SAVINGS_MAP[companyId] || COMPANY_SAVINGS_MAP['comp-sk-infra'];
+      : COMPANY_SAVINGS_MAP[companyId] || [];
 
   const totalIdentifiedWaste = companySavings.reduce((acc, s) => acc + s.estimatedSavingAnnual, 0);
   const confirmedSavingsAnnual = companySavings
@@ -528,12 +535,16 @@ export function getCompanyIntelligence(
   const monthlyBurn = company.monthlyBurn || Math.round(company.totalExpensesYear / 12);
   const dailyBurnVelocity = Math.round(monthlyBurn / 30);
   const annualSpend = company.totalExpensesYear || monthlyBurn * 12;
-  const annualRevenue = company.annualRevenue || annualSpend * 1.6;
-  const costRevenueRatio = Number(((annualSpend / annualRevenue) * 100).toFixed(1));
+  // Never fabricate revenue when the company hasn't provided one — an
+  // invented "1.6x spend" figure would render as if it were real.
+  const annualRevenue = company.annualRevenue || 0;
+  const costRevenueRatio = annualRevenue > 0 ? Number(((annualSpend / annualRevenue) * 100).toFixed(1)) : null;
 
-  // Runway in months (calculated assuming cash reserves of ~2.4x annual revenue or 28-36 months)
+  // Runway in months, assuming cash reserves of ~2.5x annual spend (a modeling
+  // assumption, surfaced as such in the UI) — null when there's no burn yet
+  // to divide by, rather than Infinity/NaN.
   const estimatedCashReserves = annualSpend * 2.5;
-  const cashRunwayMonths = Number((estimatedCashReserves / monthlyBurn).toFixed(1));
+  const cashRunwayMonths = monthlyBurn > 0 ? Number((estimatedCashReserves / monthlyBurn).toFixed(1)) : null;
 
   // Quick Cuts list derived from savings
   const quickCuts: QuickCostCut[] = companySavings.map((s, idx) => ({
@@ -551,43 +562,27 @@ export function getCompanyIntelligence(
     isExecuted: ['IMPLEMENTED', 'REALIZED'].includes(s.status),
   }));
 
-  // Spending Breakdown tailored to industry vertical
-  let spendingBreakdown: { name: string; spend: number; pct: string; color: string }[] = [];
-  if (company.industryVertical === 'CONSTRUCTION' || companyId === 'comp-sk-infra') {
-    spendingBreakdown = [
-      { name: 'Direct Civil Materials (Steel/Cement/Aggregates)', spend: Math.round(annualSpend * 0.44), pct: '44%', color: '#2563eb' },
-      { name: 'Subcontractor Labor & Execution', spend: Math.round(annualSpend * 0.26), pct: '26%', color: '#4f46e5' },
-      { name: 'Heavy Plant & Machinery Fuel/AMC', spend: Math.round(annualSpend * 0.14), pct: '14%', color: '#0891b2' },
-      { name: 'Land Liaisoning & Approvals', spend: Math.round(annualSpend * 0.08), pct: '8%', color: '#d97706' },
-      { name: 'Sales, Marketing & Broker Commissions', spend: Math.round(annualSpend * 0.05), pct: '5%', color: '#16a34a' },
-      { name: 'Corporate Admin & IT Stack', spend: Math.round(annualSpend * 0.03), pct: '3%', color: '#64748b' },
-    ];
-  } else if (isGroup) {
-    spendingBreakdown = [
-      { name: 'Infrastructure & Civil Operations', spend: Math.round(annualSpend * 0.58), pct: '58%', color: '#2563eb' },
-      { name: 'Agro Foods Processing & Supply Chain', spend: Math.round(annualSpend * 0.15), pct: '15%', color: '#16a34a' },
-      { name: 'Interius Modular Factory & Design', spend: Math.round(annualSpend * 0.12), pct: '12%', color: '#4f46e5' },
-      { name: 'Hospitality & Horizon Living Banquets', spend: Math.round(annualSpend * 0.08), pct: '8%', color: '#d97706' },
-      { name: 'Wellness & Clinical Formulations', spend: Math.round(annualSpend * 0.04), pct: '4%', color: '#0891b2' },
-      { name: 'Corporate Treasury & Governance', spend: Math.round(annualSpend * 0.03), pct: '3%', color: '#64748b' },
-    ];
-  } else if (companyId === 'comp-sk-agro') {
-    spendingBreakdown = [
-      { name: 'Raw Grain & Farmer Procurement', spend: Math.round(annualSpend * 0.48), pct: '48%', color: '#16a34a' },
-      { name: 'Processing Plant Energy & Cold Storage', spend: Math.round(annualSpend * 0.22), pct: '22%', color: '#d97706' },
-      { name: 'Packaging Materials & Cylinders', spend: Math.round(annualSpend * 0.14), pct: '14%', color: '#2563eb' },
-      { name: 'Distribution Freight & Mandi Logistics', spend: Math.round(annualSpend * 0.10), pct: '10%', color: '#4f46e5' },
-      { name: 'Quality Lab, FSSAI & Admin', spend: Math.round(annualSpend * 0.06), pct: '6%', color: '#64748b' },
-    ];
-  } else {
-    spendingBreakdown = [
-      { name: 'Core Operations & Materials', spend: Math.round(annualSpend * 0.42), pct: '42%', color: '#2563eb' },
-      { name: 'Workforce & Talent', spend: Math.round(annualSpend * 0.28), pct: '28%', color: '#4f46e5' },
-      { name: 'Facilities & Power', spend: Math.round(annualSpend * 0.15), pct: '15%', color: '#d97706' },
-      { name: 'Software, IT & Cloud', spend: Math.round(annualSpend * 0.10), pct: '10%', color: '#0891b2' },
-      { name: 'Admin & Compliance', spend: Math.round(annualSpend * 0.05), pct: '5%', color: '#64748b' },
-    ];
+  // Spending breakdown computed from this company's real expense records —
+  // never a guessed industry-shaped percentage split.
+  const BREAKDOWN_COLORS = ['#2563eb', '#4f46e5', '#0891b2', '#d97706', '#16a34a', '#64748b', '#db2777', '#7c3aed'];
+  const companyExpenses = realExpenses.filter((e) => e.companyId === companyId);
+  const categoryTotals = new Map<string, number>();
+  for (const e of companyExpenses) {
+    categoryTotals.set(e.category, (categoryTotals.get(e.category) || 0) + e.amount);
   }
+  const totalCategorized = Array.from(categoryTotals.values()).reduce((a, b) => a + b, 0);
+  const spendingBreakdown: { name: string; spend: number; pct: string; color: string }[] =
+    totalCategorized > 0
+      ? Array.from(categoryTotals.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([name, spend], idx) => ({
+            name,
+            spend,
+            pct: `${Math.round((spend / totalCategorized) * 100)}%`,
+            color: BREAKDOWN_COLORS[idx % BREAKDOWN_COLORS.length],
+          }))
+      : [];
 
   // 12-Month Trajectory
   const baseMonthlyRev = annualRevenue / 12;
@@ -615,64 +610,34 @@ export function getCompanyIntelligence(
     { category: 'Software & IT Subscriptions', pctChange: '-14.2%', trend: 'DOWN' as const },
   ];
 
-  // AI Briefing
+  // Briefing text — built only from this company's own real figures, never a
+  // fabricated narrative about a different (demo) company.
+  const runwayPhrase = cashRunwayMonths !== null ? `${cashRunwayMonths} months cash runway` : 'cash runway not yet estimable (no revenue on file)';
   const aiBriefing = isGroup
-    ? `Consolidated Skandhanshi Group burn rate is ₹${(monthlyBurn / 10000000).toFixed(2)} Cr/month. Realized cost cuts generated ₹${(realizedSavingsAnnual / 10000000).toFixed(2)} Cr in annualized EBITDA recovery. Centralizing cross-subsidiary steel/cement and ERP licensing represents the single largest margin dividend.`
-    : `${company.name} operating at ₹${(monthlyBurn / 10000000).toFixed(2)} Cr monthly burn with ${cashRunwayMonths} months cash runway. AI detected ₹${(totalIdentifiedWaste / 10000000).toFixed(2)} Cr in actionable cost-cutting leaks across operational ledgers.`;
+    ? `Consolidated burn rate across ${company.name} is ${formatCurrency(monthlyBurn, company.currency, true)}/month. Realized cost cuts generated ${formatCurrency(realizedSavingsAnnual, company.currency, true)} in annualized savings so far.`
+    : `${company.name} is operating at ${formatCurrency(monthlyBurn, company.currency, true)}/month with ${runwayPhrase}. ${totalIdentifiedWaste > 0 ? `${formatCurrency(totalIdentifiedWaste, company.currency, true)} in cost-cutting opportunities identified across your ledgers.` : 'No cost-cutting opportunities identified yet — run an AI audit once you have expense and subscription data.'}`;
 
-  // Department Burn Table
-  const departmentBurnTable = [
-    {
-      deptCode: 'DEP-EXEC',
-      deptName: 'CIVIL & EXECUTION',
-      monthlyBudgetCap: Math.round(monthlyBurn * 0.38),
-      monthlyBurnActual: Math.round(monthlyBurn * 0.41),
-      headcount: 142,
-      variancePct: 7.9,
-      status: 'WARNING' as const,
-      topLeak: 'Over-batching cement mix & transit mixer idle time',
-    },
-    {
-      deptCode: 'DEP-STORE',
-      deptName: 'CENTRAL STORES & INVENTORY',
-      monthlyBudgetCap: Math.round(monthlyBurn * 0.22),
-      monthlyBurnActual: Math.round(monthlyBurn * 0.21),
-      headcount: 48,
-      variancePct: -4.5,
-      status: 'HEALTHY' as const,
-      topLeak: 'Steel off-cut BBS rebar scrap generation',
-    },
-    {
-      deptCode: 'DEP-MEP',
-      deptName: 'MEP, ELECTRICAL & PLUMBING',
-      monthlyBudgetCap: Math.round(monthlyBurn * 0.16),
-      monthlyBurnActual: Math.round(monthlyBurn * 0.18),
-      headcount: 36,
-      variancePct: 12.5,
-      status: 'CRITICAL' as const,
-      topLeak: 'Copper conduit scrap & unmonitored diesel gen-set power',
-    },
-    {
-      deptCode: 'DEP-PROC',
-      deptName: 'PURCHASE & PROCUREMENT',
-      monthlyBudgetCap: Math.round(monthlyBurn * 0.12),
-      monthlyBurnActual: Math.round(monthlyBurn * 0.11),
-      headcount: 18,
-      variancePct: -8.3,
-      status: 'HEALTHY' as const,
-      topLeak: 'Fragmented local vendor stationery & consumables',
-    },
-    {
-      deptCode: 'DEP-IT',
-      deptName: 'IT, ERP & AUTOMATION',
-      monthlyBudgetCap: Math.round(monthlyBurn * 0.06),
-      monthlyBurnActual: Math.round(monthlyBurn * 0.05),
-      headcount: 12,
-      variancePct: -16.7,
-      status: 'HEALTHY' as const,
-      topLeak: 'Dormant SaaS user seats & idle GPU cloud servers',
-    },
-  ];
+  // Department burn table built only from this company's real departments —
+  // empty when none have been set up yet, never a fabricated org chart.
+  const companyDepartments = realDepartments.filter((d) => d.companyId === companyId);
+  const departmentBurnTable = companyDepartments.map((d) => {
+    const monthlyBudgetCap = d.monthlyBurn || Math.round((d.annualBudget || 0) / 12);
+    const monthlyBurnActual = Math.round((d.spentYearToDate || 0) / 12);
+    const variancePct =
+      monthlyBudgetCap > 0 ? Number((((monthlyBurnActual - monthlyBudgetCap) / monthlyBudgetCap) * 100).toFixed(1)) : 0;
+    const status: 'HEALTHY' | 'WARNING' | 'CRITICAL' =
+      d.healthStatus === 'OVER_BUDGET' ? 'CRITICAL' : variancePct > 5 ? 'WARNING' : 'HEALTHY';
+    return {
+      deptCode: d.code,
+      deptName: d.name,
+      monthlyBudgetCap,
+      monthlyBurnActual,
+      headcount: d.headcount || 0,
+      variancePct,
+      status,
+      topLeak: d.costSavingPlaybooks?.[0]?.title || 'No cost leaks identified yet',
+    };
+  });
 
   return {
     companyId,

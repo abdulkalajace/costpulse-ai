@@ -12,25 +12,21 @@ import {
   requireAuth,
   requireAdmin,
 } from "./auth";
-import { INFRA_39_DEPARTMENTS_TEMPLATE } from "../src/data/departmentData";
-import { ensureDepartmentsHaveUsersAndRules } from "../src/data/departmentUserData";
-
 export const router = Router();
 
 const DEFAULT_AVATAR =
   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80";
 
-/** Builds a clean, empty-ledger starter workspace for a brand-new account. */
+/**
+ * Builds a clean, genuinely empty-ledger starter workspace for a brand-new
+ * account. Departments are NOT pre-seeded here: the 39-department template
+ * (INFRA_39_DEPARTMENTS_TEMPLATE) carries hardcoded example budgets and is
+ * only meant as an opt-in "quick start from a template" action the user can
+ * trigger later from the Departments screen, not invisible default data.
+ */
 function buildStarterWorkspace(companyName: string, industry: string, currency: string) {
   const companyId = `comp-${createId()}`;
-  const baseDepartments = INFRA_39_DEPARTMENTS_TEMPLATE.map((dept: any) => ({
-    ...dept,
-    companyId,
-    spentYearToDate: 0,
-    achievedSavingsAnnual: 0,
-    monthlyBurn: Math.round(dept.annualBudget / 12),
-  }));
-  const departments = ensureDepartmentsHaveUsersAndRules(baseDepartments as any);
+  const departments: any[] = [];
 
   return {
     companies: [
@@ -101,7 +97,7 @@ router.post("/auth/signup", async (req, res) => {
   try {
     const { companyName, industry, currency, adminName, email, password } = req.body || {};
 
-    if (!companyName || !adminName || !email || !password) {
+    if (!companyName || !industry || !adminName || !email || !password) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
     }
     if (String(password).length < 8) {
@@ -114,12 +110,12 @@ router.post("/auth/signup", async (req, res) => {
       return res.status(409).json({ success: false, error: "An account with this email already exists" });
     }
 
-    const workspace = buildStarterWorkspace(companyName, industry || "Technology & Business Services", currency || "INR");
+    const workspace = buildStarterWorkspace(companyName, industry, currency || "INR");
     const passwordHash = await hashPassword(password);
 
     const [account] = await db
       .insert(accounts)
-      .values({ name: companyName, currency: currency || "INR", workspace })
+      .values({ name: companyName, industry, currency: currency || "INR", workspace })
       .returning();
 
     const [user] = await db

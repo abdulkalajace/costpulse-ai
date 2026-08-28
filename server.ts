@@ -185,79 +185,122 @@ Instructions:
       }
     }
 
-    // Heuristic deterministic fallback
-    const fallbackOpportunities = [
-      {
-        id: "sav-fb-01",
-        companyId: company?.id || "comp-sk-infra",
-        category: "Cloud Infrastructure",
-        actionType: "DOWNGRADE",
-        title: "Decommission Idle GPU Nodes & Orphaned EBS Volumes",
-        problem: "12 unattached gp3 EBS volumes and 4 underutilized GPU training nodes in AWS us-east-1 running 24/7.",
-        evidence: "Telemetry shows < 4.2% compute capacity utilized in the last 60 days.",
-        currentCostAnnual: 4800000,
-        estimatedSavingAnnual: 3600000,
-        actualSavingConfirmed: 0,
-        currency: currency,
-        confidence: "HIGH",
-        effort: "LOW",
-        risk: "LOW",
-        status: "DETECTED",
-        targetEntityName: "Amazon Web Services",
-      },
-      {
-        id: "sav-fb-02",
-        companyId: company?.id || "comp-sk-infra",
+    // No Gemini key (or the model call failed) — fall back to deterministic,
+    // rule-based analysis of the account's OWN real data. This never invents
+    // a company, vendor, or number: if there's nothing to analyze yet, it
+    // honestly returns zero opportunities instead of a canned "impressive"
+    // result.
+    const companyId = company?.id || "";
+    const fallbackOpportunities: any[] = [];
+
+    for (const sub of (subscriptions || []) as any[]) {
+      const wastedSeats = Math.max(0, (sub.seatsTotal || 0) - (sub.seatsUsed || 0));
+      const isLowUse = sub.status === "UNUSED" || sub.status === "REDUNDANT" || (typeof sub.usageRate === "number" && sub.usageRate < 30);
+      if (!isLowUse || wastedSeats === 0) continue;
+      const annualCost = sub.annualCost || (sub.monthlyCost || 0) * 12;
+      const perSeatAnnual = sub.seatsTotal > 0 ? annualCost / sub.seatsTotal : 0;
+      const estimatedSavingAnnual = Math.round(wastedSeats * perSeatAnnual);
+      if (estimatedSavingAnnual <= 0) continue;
+      fallbackOpportunities.push({
+        id: `sav-fb-sub-${sub.id}`,
+        companyId,
         category: "Software & SaaS",
-        actionType: "CONSOLIDATE",
-        title: "Standardize Video Conferencing on Google Meet",
-        problem: "Dual active subscriptions for Zoom Enterprise and Google Meet across 420 employees.",
-        evidence: "88% of team meetings take place on Google Meet; Zoom has only 34 active weekly users.",
-        currentCostAnnual: 2520000,
-        estimatedSavingAnnual: 2070000,
-        actualSavingConfirmed: 450000,
-        currency: currency,
-        confidence: "HIGH",
+        actionType: "DOWNGRADE",
+        title: `Reduce unused seats on ${sub.softwareName}`,
+        problem: `${sub.softwareName} has ${wastedSeats} of ${sub.seatsTotal || 0} seats unused${typeof sub.usageRate === "number" ? ` (usage rate ${sub.usageRate}%)` : ""}.`,
+        evidence: `Based on the seat usage recorded on this subscription in your workspace.`,
+        currentCostAnnual: annualCost,
+        estimatedSavingAnnual,
+        actualSavingConfirmed: 0,
+        currency,
+        confidence: "MEDIUM",
         effort: "LOW",
         risk: "LOW",
-        status: "IN_REVIEW",
-        targetEntityName: "Zoom Video Communications",
-      },
-      {
-        id: "sav-fb-03",
-        companyId: company?.id || "comp-sk-infra",
-        category: "Property & Facilities",
-        actionType: "SUBLEASE",
-        title: "Sublease Underutilized Floor 4 at Bengaluru Campus",
-        problem: "Floor 4 has 200 desks with average physical occupancy of only 18.5% due to hybrid policy.",
-        evidence: "Access card telemetry demonstrates peak Thursday occupancy capped at 37 employees.",
-        currentCostAnnual: 18000000,
-        estimatedSavingAnnual: 14500000,
-        actualSavingConfirmed: 0,
-        currency: currency,
-        confidence: "MEDIUM",
-        effort: "HIGH",
-        risk: "MEDIUM",
         status: "DETECTED",
-        targetEntityName: "Bengaluru Technology Campus",
-      },
-    ];
+        targetEntityName: sub.vendorName || sub.softwareName,
+      });
+    }
+
+    // Two or more active subscriptions in the same category are a real
+    // consolidation candidate.
+    const activeByCategory = new Map<string, any[]>();
+    for (const sub of (subscriptions || []) as any[]) {
+      if (sub.status !== "ACTIVE" && sub.status !== "UNDERUTILIZED") continue;
+      const list = activeByCategory.get(sub.category) || [];
+      list.push(sub);
+      activeByCategory.set(sub.category, list);
+    }
+    for (const [category, subs] of activeByCategory) {
+      if (subs.length < 2) continue;
+      const withCost = subs.map((s) => ({ ...s, _annual: s.annualCost || (s.monthlyCost || 0) * 12 }));
+      withCost.sort((a, b) => a._annual - b._annual);
+      const toDrop = withCost.slice(1);
+      const estimatedSavingAnnual = Math.round(toDrop.reduce((sum, s) => sum + s._annual, 0));
+      if (estimatedSavingAnnual <= 0) continue;
+      fallbackOpportunities.push({
+        id: `sav-fb-dup-${category.replace(/\s+/g, "-").toLowerCase()}`,
+        companyId,
+        category,
+        actionType: "CONSOLIDATE",
+        title: `Consolidate ${subs.length} overlapping "${category}" subscriptions`,
+        problem: `${subs.map((s: any) => s.softwareName).join(", ")} all fall under "${category}" and may serve overlapping purposes.`,
+        evidence: `${subs.length} active subscriptions currently billed in this category.`,
+        currentCostAnnual: Math.round(withCost.reduce((sum, s) => sum + s._annual, 0)),
+        estimatedSavingAnnual,
+        actualSavingConfirmed: 0,
+        currency,
+        confidence: "LOW",
+        effort: "MEDIUM",
+        risk: "LOW",
+        status: "DETECTED",
+        targetEntityName: category,
+      });
+    }
+
+    for (const asset of (assets || []) as any[]) {
+      const isIdle = asset.status === "IDLE" || asset.status === "SURPLUS" || asset.status === "UNDERUTILIZED";
+      if (!isIdle) continue;
+      const holdingCost = Math.round((asset.maintenanceCostYearly || 0) + (asset.insuranceCostYearly || 0));
+      if (holdingCost <= 0) continue;
+      fallbackOpportunities.push({
+        id: `sav-fb-asset-${asset.id}`,
+        companyId,
+        category: "Hardware & Devices",
+        actionType: asset.status === "SURPLUS" ? "REMOVE" : "REALLOCATE",
+        title: `${asset.status === "SURPLUS" ? "Dispose of" : "Reassign"} idle asset: ${asset.name}`,
+        problem: `${asset.name} is marked ${asset.status.toLowerCase()} (utilization score ${asset.utilizationScore ?? 0}%) but still carries maintenance/insurance costs.`,
+        evidence: `Utilization and status recorded on this asset in your workspace.`,
+        currentCostAnnual: holdingCost,
+        estimatedSavingAnnual: holdingCost,
+        actualSavingConfirmed: 0,
+        currency,
+        confidence: "MEDIUM",
+        effort: "LOW",
+        risk: "LOW",
+        status: "DETECTED",
+        targetEntityName: asset.name,
+      });
+    }
+
+    const totalPotentialSavingsAnnual = Math.round(
+      fallbackOpportunities.reduce((sum, o) => sum + o.estimatedSavingAnnual, 0)
+    );
+    const executiveSummary =
+      fallbackOpportunities.length > 0
+        ? `Rule-based analysis of your own data found ${fallbackOpportunities.length} cost-cutting ${fallbackOpportunities.length === 1 ? "opportunity" : "opportunities"} across subscriptions and assets. Add a GEMINI_API_KEY for deeper AI-generated analysis.`
+        : "No cost-cutting opportunities detected yet. Add expenses, subscriptions, or assets — the audit re-runs against your real data.";
 
     res.json({
       success: true,
       data: {
-        executiveSummary: "AI Cost Intelligence scanned corporate run-rate. Identified major software redundancy (Zoom vs Google Meet), idle cloud compute in AWS us-east-1, and 34.2% real estate seat utilization in Bengaluru HQ.",
-        totalPotentialSavingsAnnual: 20170000,
-        topRisksDetected: [
-          "Vendor concentration risk with AWS infrastructure growing at +16.4% YoY uncommitted.",
-          "Real estate vacancy risk: 200 vacant desks on Bengaluru HQ Floor 4.",
-          "Workforce contractor inflation: DevOps agency retained at 2.4x internal engineering cost basis.",
-        ],
+        executiveSummary,
+        totalPotentialSavingsAnnual,
+        topRisksDetected: [],
         opportunities: fallbackOpportunities,
       },
       opportunities: fallbackOpportunities,
-      executiveSummary: "AI Cost Intelligence scanned corporate run-rate. Identified major software redundancy (Zoom vs Google Meet), idle cloud compute in AWS us-east-1, and 34.2% real estate seat utilization in Bengaluru HQ.",
-      totalPotentialSavingsAnnual: 20170000,
+      executiveSummary,
+      totalPotentialSavingsAnnual,
       aiPowered: false,
     });
   } catch (error: any) {

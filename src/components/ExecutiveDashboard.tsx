@@ -30,7 +30,7 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
-import { Company, SavingsOpportunity, CurrencyCode, Expense, OpportunityStatus } from '../types';
+import { Company, SavingsOpportunity, CurrencyCode, Expense, Department, OpportunityStatus } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { getCompanyIntelligence, QuickCostCut } from '../data/companyIntelligence';
 import { NavTab } from './Sidebar';
@@ -39,6 +39,7 @@ interface ExecutiveDashboardProps {
   company: Company;
   savings: SavingsOpportunity[];
   expenses: Expense[];
+  departments: Department[];
   currency: CurrencyCode;
   onNavigateTab: (tab: NavTab) => void;
   onUpdateOpportunityStatus?: (id: string, newStatus: OpportunityStatus) => void;
@@ -50,13 +51,15 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   company,
   savings,
   expenses,
+  departments,
   currency,
   onNavigateTab,
   onUpdateOpportunityStatus,
   onTriggerAudit,
   isAuditing = false,
 }) => {
-  const intel = getCompanyIntelligence(company, savings);
+  const hasRealActivity = expenses.length > 0 || savings.length > 0 || departments.length > 0;
+  const intel = getCompanyIntelligence(company, savings, expenses, departments);
 
   // Local state for interactive What-If Levers
   const [saasCutPct, setSaasCutPct] = useState(15);
@@ -76,11 +79,10 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   const simulatedMonthlyBurnDrop = Math.round(totalSimulatedAnnualSavings / 12);
   const newProjectedBurn = Math.max(100000, intel.monthlyBurn - simulatedMonthlyBurnDrop);
   const simulatedRunwayExtension = Number(
-    ((intel.annualSpend * 2.5) / newProjectedBurn - intel.cashRunwayMonths).toFixed(1)
+    ((intel.annualSpend * 2.5) / newProjectedBurn - (intel.cashRunwayMonths ?? 0)).toFixed(1)
   );
-  const ebitdaMarginBoost = Number(
-    ((totalSimulatedAnnualSavings / intel.annualRevenue) * 100).toFixed(1)
-  );
+  const ebitdaMarginBoost =
+    intel.annualRevenue > 0 ? Number(((totalSimulatedAnnualSavings / intel.annualRevenue) * 100).toFixed(1)) : null;
 
   const handleExecuteQuickCut = (cut: QuickCostCut) => {
     setExecutedCutIds((prev) => [...prev, cut.id]);
@@ -90,6 +92,50 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
       onUpdateOpportunityStatus(matchedOpp.id, 'REALIZED');
     }
   };
+
+  if (!hasRealActivity) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-20 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50">
+          <Sparkles className="h-7 w-7 text-blue-600" />
+        </div>
+        <h1 className="mt-5 text-xl font-bold text-gray-900">Welcome to {company.name}</h1>
+        <p className="mt-2 max-w-md text-sm text-gray-500">
+          There's no spending data yet. Add your first expenses, subscriptions, or assets and this dashboard
+          will fill in with real cost insights — no sample data, no guesswork.
+        </p>
+        <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
+          <button
+            onClick={() => onNavigateTab('EXPENSES')}
+            className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+          >
+            <span className="text-xs font-bold text-gray-900">Add an expense</span>
+            <span className="text-[11px] text-gray-500">Log a real cost or scan a receipt</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab('SUBSCRIPTIONS')}
+            className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+          >
+            <span className="text-xs font-bold text-gray-900">Add a subscription</span>
+            <span className="text-[11px] text-gray-500">Track your SaaS & software spend</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab('DEPARTMENT_WORKFLOWS')}
+            className="flex flex-col items-start gap-1 rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+          >
+            <span className="text-xs font-bold text-gray-900">Set up departments</span>
+            <span className="text-[11px] text-gray-500">Organize spend by team & budget</span>
+          </button>
+        </div>
+        {onTriggerAudit && (
+          <p className="mt-6 text-[11px] text-gray-400">
+            Once you have some data, use <span className="font-semibold text-gray-500">Run AI FinOps Audit</span> above to
+            surface cost-cutting opportunities.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-14 text-[#111827]">
@@ -180,7 +226,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-2xl font-black text-emerald-900 tracking-tight">
-            {intel.cashRunwayMonths} Months
+            {intel.cashRunwayMonths !== null ? `${intel.cashRunwayMonths} Months` : 'Add revenue to estimate'}
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-gray-600 border-t border-emerald-100 pt-2">
             <span>Reserves Multiple:</span>
@@ -222,7 +268,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 text-2xl font-black text-slate-900 tracking-tight">
-            {intel.costRevenueRatio}%
+            {intel.costRevenueRatio !== null ? `${intel.costRevenueRatio}%` : '—'}
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-gray-600 border-t border-slate-100 pt-2">
             <span>Annual Revenue:</span>
@@ -332,6 +378,11 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
           </button>
         </div>
 
+        {intel.quickCuts.length === 0 && (
+          <p className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-4 text-xs text-gray-500">
+            No cost-cutting opportunities yet. Run an AI audit once you have real expense or subscription data.
+          </p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {intel.quickCuts.slice(0, 3).map((cut) => {
             const isCutDone = cut.isExecuted || executedCutIds.includes(cut.id);
@@ -513,7 +564,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded bg-indigo-800 px-2.5 py-1 text-[11px] font-semibold text-indigo-200">
-              EBITDA Margin Boost: +{ebitdaMarginBoost}%
+              EBITDA Margin Boost: {ebitdaMarginBoost !== null ? `+${ebitdaMarginBoost}%` : 'Add revenue to estimate'}
             </span>
             <button
               onClick={() => onNavigateTab('SAVINGS_CENTER')}
@@ -600,6 +651,9 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
           </div>
 
           <div className="space-y-3 pt-1">
+            {intel.spendingBreakdown.length === 0 && (
+              <p className="text-xs text-gray-500">No categorized expenses yet — add an expense to see the breakdown.</p>
+            )}
             {intel.spendingBreakdown.map((cat, idx) => (
               <div key={idx} className="space-y-1">
                 <div className="flex items-center justify-between text-xs font-medium">
@@ -646,7 +700,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             onClick={() => onNavigateTab('DEPARTMENT_WORKFLOWS')}
             className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
           >
-            <span>Manage All 39 Departments</span>
+            <span>{departments.length > 0 ? `Manage All ${departments.length} Departments` : 'Set Up Departments'}</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -665,6 +719,16 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              {intel.departmentBurnTable.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-xs text-gray-500">
+                    No departments set up yet.{' '}
+                    <button onClick={() => onNavigateTab('DEPARTMENT_WORKFLOWS')} className="font-semibold text-blue-600 hover:text-blue-700">
+                      Add your first department
+                    </button>
+                  </td>
+                </tr>
+              )}
               {intel.departmentBurnTable.map((dept, idx) => (
                 <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
                   <td className="px-4 py-3 font-bold text-[#111827]">
