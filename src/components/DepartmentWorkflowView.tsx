@@ -122,41 +122,10 @@ export const DepartmentWorkflowView: React.FC<DepartmentWorkflowViewProps> = ({
   const [isAiGeneratingRules, setIsAiGeneratingRules] = useState(false);
   const [isHrSyncModalOpen, setIsHrSyncModalOpen] = useState(false);
 
-  // Document Ingestion History State
-  const [uploadedDocsHistory, setUploadedDocsHistory] = useState<DepartmentUploadedDocument[]>([
-    {
-      id: 'doc-hist-1',
-      departmentId: departments[0]?.id || 'dep-1',
-      departmentName: departments[0]?.name || 'Civil Engineering & Construction',
-      fileName: 'Civil_Works_Q2_Procurement_Ledger.xlsx',
-      fileSize: 184300,
-      fileType: 'SHEET',
-      uploadedAt: '2026-08-20T14:30:00Z',
-      uploadedByName: 'Senior Estimator',
-      status: 'SYNCED',
-      confidenceOverall: 96,
-      hasOverwriteWarnings: true,
-      aiExecutiveSummary: 'Extracted 6 line items, updated concrete mix procurement rates, and added volume discount workflow.',
-      extractedItems: [
-        {
-          id: 'item-h-1',
-          itemType: 'EXPENSE_INVOICE',
-          title: 'Pre-cast Concrete Batch Invoice #4092',
-          category: 'RAW_MATERIALS',
-          targetDepartmentId: departments[0]?.id || 'dep-1',
-          targetDepartmentName: departments[0]?.name || 'Civil Engineering',
-          amount: 450000,
-          currency: 'INR',
-          vendorName: 'UltraTech Aggregate Ltd',
-          invoiceNumber: 'INV-UT-4092',
-          confidenceScore: 98,
-          isOverwriteWarning: false,
-          resolution: 'CREATE_NEW',
-          isApproved: true,
-        },
-      ],
-    },
-  ]);
+  // Document Ingestion History State — starts empty for every real account;
+  // previously pre-seeded with a fabricated "Civil_Works_Q2_Procurement_
+  // Ledger.xlsx" upload and a fake ₹4,50,000 invoice that never happened.
+  const [uploadedDocsHistory, setUploadedDocsHistory] = useState<DepartmentUploadedDocument[]>([]);
 
 
   // Form states for adding/editing department

@@ -38,10 +38,13 @@ export const WhatIfSavingsSimulator: React.FC<WhatIfSavingsSimulatorProps> = ({
 
   const [appliedToast, setAppliedToast] = useState<boolean>(false);
 
-  // Baseline Financials
-  const baselineAnnualSpend = company.totalExpensesYear || 1746000000; // ~₹174.6 Cr
+  // Baseline Financials — real only. No fabricated fallback spend: if the
+  // account has no recorded spend yet, the simulator has nothing real to
+  // model against and says so instead of simulating against invented numbers.
+  const baselineAnnualSpend = company.totalExpensesYear || 0;
   const baselineMonthlyBurn = company.monthlyBurn || Math.round(baselineAnnualSpend / 12);
-  const estimatedCashReserves = baselineMonthlyBurn * 14; // simulated 14 months baseline runway
+  const hasRealBaseline = baselineAnnualSpend > 0 && baselineMonthlyBurn > 0;
+  const estimatedCashReserves = baselineMonthlyBurn * 14; // assumed 14 months baseline runway
 
   // Component spend estimates (derived proportionately)
   const softwareSpendAnnual = baselineAnnualSpend * 0.18; // ~18%
@@ -91,6 +94,19 @@ export const WhatIfSavingsSimulator: React.FC<WhatIfSavingsSimulatorProps> = ({
       setFacilitiesCutPct(20);
     }
   };
+
+  if (!hasRealBaseline) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-10 text-center">
+        <Sliders className="h-8 w-8 text-slate-400 mx-auto mb-3" />
+        <h3 className="text-sm font-bold text-slate-900">Not enough data to simulate yet</h3>
+        <p className="mt-1.5 max-w-sm mx-auto text-xs text-slate-500">
+          The runway simulator models cuts against your real annual spend and monthly burn. Add expenses (or set
+          those figures on your company profile) to use it.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-6">

@@ -23,8 +23,6 @@ import {
   HR_PROVIDERS,
   HrProviderInfo,
   generateHrRosterForDepartment,
-  syncAllDepartmentsWithHr,
-  syncSingleDepartmentWithHr,
   parseHrMasterSpreadsheet,
 } from '../data/hrPayrollSyncEngine';
 
@@ -45,30 +43,31 @@ export const HrPayrollSyncModal: React.FC<HrPayrollSyncModalProps> = ({
   currency,
   onCommitSync,
 }) => {
-  const [selectedProvider, setSelectedProvider] = useState<HrProviderInfo>(HR_PROVIDERS[0]);
+  const csvProvider = HR_PROVIDERS.find((p) => p.id === 'csv_upload')!;
+  const [selectedProvider, setSelectedProvider] = useState<HrProviderInfo>(csvProvider);
   const [syncScope, setSyncScope] = useState<'ALL' | 'SINGLE'>(targetDepartment ? 'SINGLE' : 'ALL');
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedTemplate, setCopiedTemplate] = useState(false);
 
-  // CSV Text Input for Spreadsheet Upload Mode
-  const [csvText, setCsvText] = useState<string>(
+  const SAMPLE_TEMPLATE =
     `Employee Code,Employee Name,Department,Designation,Reporting Manager,Email,Salary,Spending Limit\n` +
-    `EMP-ACC-001,Ramesh Sundaram,ACCOUNTS,Chief Financial Controller & VP,Board of Directors,ramesh.s@enterprise.io,3600000,2500000\n` +
-    `EMP-ACC-002,Pooja Deshmukh,ACCOUNTS,Senior Manager - Statutory Audit,Ramesh Sundaram,pooja.d@enterprise.io,1800000,500000\n` +
-    `EMP-ACC-003,Vikram Joshi,ACCOUNTS,Manager - Accounts Payable,Pooja Deshmukh,vikram.j@enterprise.io,1400000,250000\n` +
-    `EMP-ACC-004,Deepa Narayanan,ACCOUNTS,Senior GST Specialist,Vikram Joshi,deepa.n@enterprise.io,950000,75000\n` +
-    `EMP-CON-001,Suresh Varma,CONSTRUCTION,Chief Project Officer & VP,Board of Directors,suresh.v@enterprise.io,4200000,5000000\n` +
-    `EMP-CON-002,Anand Kulkarni,CONSTRUCTION,Senior Project Manager,Suresh Varma,anand.k@enterprise.io,2200000,1000000\n` +
-    `EMP-CON-003,Rahul Nair,CONSTRUCTION,Project Lead - Structural Pour,Anand Kulkarni,rahul.n@enterprise.io,1600000,500000\n` +
-    `EMP-CON-004,Manish Verma,CONSTRUCTION,Senior Site Civil Engineer,Rahul Nair,manish.v@enterprise.io,1050000,100000`
-  );
+    `EMP-ACC-001,Jane Doe,ACCOUNTS,Chief Financial Controller & VP,Board of Directors,jane.doe@example.com,3600000,2500000\n` +
+    `EMP-ACC-002,John Smith,ACCOUNTS,Senior Manager - Statutory Audit,Jane Doe,john.smith@example.com,1800000,500000`;
+
+  // CSV Text Input for Spreadsheet Upload Mode — starts empty; the sample
+  // above is only ever copied in via the explicit "Copy Sample Template"
+  // action, never pre-loaded as the submittable value.
+  const [csvText, setCsvText] = useState<string>('');
   const [csvParseError, setCsvParseError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const targetDept = targetDepartment || departments[0] || null;
+  const isRealProvider = selectedProvider.id === 'csv_upload';
 
-  // Sample preview calculation
+  // Sample preview calculation — illustrative only (no real API integration
+  // exists yet for these named providers), used to show what a synced
+  // roster WOULD look like once connected.
   const samplePreviewUsers = targetDept
     ? generateHrRosterForDepartment(targetDept, selectedProvider.name)
     : [];
@@ -90,33 +89,24 @@ export const HrPayrollSyncModal: React.FC<HrPayrollSyncModalProps> = ({
   };
 
   const handleCopyTemplate = () => {
-    navigator.clipboard.writeText(csvText);
+    navigator.clipboard.writeText(SAMPLE_TEMPLATE);
     setCopiedTemplate(true);
     setTimeout(() => setCopiedTemplate(false), 2000);
   };
 
   const handleExecuteSync = () => {
+    if (!isRealProvider) return; // no real API integration exists for named HRMS providers yet
     setIsSyncing(true);
     setCsvParseError(null);
 
     setTimeout(() => {
-      if (selectedProvider.id === 'csv_upload') {
-        const result = parseHrMasterSpreadsheet(csvText, departments, selectedProvider.name);
-        if (!result.success) {
-          setCsvParseError(result.error || 'Failed to parse spreadsheet format.');
-          setIsSyncing(false);
-          return;
-        }
-        onCommitSync(result.updatedDepartments, selectedProvider.name, result.totalParsed);
-      } else {
-        if (syncScope === 'ALL') {
-          const updated = syncAllDepartmentsWithHr(departments, selectedProvider.name);
-          onCommitSync(updated, selectedProvider.name, updated.length * 5);
-        } else if (targetDept) {
-          const updated = syncSingleDepartmentWithHr(departments, targetDept.id, selectedProvider.name);
-          onCommitSync(updated, selectedProvider.name, samplePreviewUsers.length);
-        }
+      const result = parseHrMasterSpreadsheet(csvText, departments, selectedProvider.name);
+      if (!result.success) {
+        setCsvParseError(result.error || 'Failed to parse spreadsheet format.');
+        setIsSyncing(false);
+        return;
       }
+      onCommitSync(result.updatedDepartments, selectedProvider.name, result.totalParsed);
       setIsSyncing(false);
       onClose();
     }, 800);
@@ -290,12 +280,25 @@ export const HrPayrollSyncModal: React.FC<HrPayrollSyncModalProps> = ({
               )}
             </div>
           ) : (
-            /* Step 3: Live Hierarchy & Auto-Mapped Preview */
+            /* Illustrative preview only — no real API integration exists for
+               named HRMS providers yet, so this never gets committed as-is. */
             <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <span className="font-bold">Not connected yet:</span> Direct sync with {selectedProvider.name} isn't
+                available yet. The preview below is illustrative only — use{' '}
+                <button
+                  type="button"
+                  onClick={() => setSelectedProvider(csvProvider)}
+                  className="font-semibold text-amber-900 underline"
+                >
+                  CSV / Excel Upload
+                </button>{' '}
+                to import your real roster today.
+              </div>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                   <Network className="w-4 h-4 text-indigo-600" />
-                  <span>3. Auto-Derived Hierarchy & Role Matrix Preview</span>
+                  <span>Example Hierarchy & Role Matrix (illustrative)</span>
                 </label>
                 <span className="text-xs font-semibold text-indigo-700">
                   Target: {syncScope === 'ALL' ? `All ${departments.length} Depts` : targetDept?.name}
@@ -396,20 +399,19 @@ export const HrPayrollSyncModal: React.FC<HrPayrollSyncModalProps> = ({
           <button
             type="button"
             onClick={handleExecuteSync}
-            disabled={isSyncing}
-            className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-all disabled:opacity-50"
+            disabled={isSyncing || !isRealProvider || !csvText.trim()}
+            title={!isRealProvider ? 'Direct sync with this provider isn\'t connected yet — use CSV / Excel upload instead' : undefined}
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSyncing ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Ingesting Roster & Hierarchy from {selectedProvider.name}...</span>
+                <span>Importing roster from your file…</span>
               </>
             ) : (
               <>
                 <Zap className="w-4 h-4" />
-                <span>
-                  Execute Auto-Sync ({syncScope === 'ALL' ? `All ${departments.length} Departments` : targetDept?.name})
-                </span>
+                <span>Import Roster from CSV</span>
               </>
             )}
           </button>
