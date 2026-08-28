@@ -818,6 +818,7 @@ export function App() {
         <HrDashboard
           currency={currency}
           savings={savings}
+          departments={departments}
           onNavigateTab={(tab) => setCurrentTab(tab)}
         />
       );

@@ -12,39 +12,40 @@ import {
   Clock,
   PieChart,
 } from 'lucide-react';
-import { CurrencyCode, SavingsOpportunity } from '../types';
+import { CurrencyCode, SavingsOpportunity, Department } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { NavTab } from './Sidebar';
 
 interface HrDashboardProps {
   currency: CurrencyCode;
   savings: SavingsOpportunity[];
+  departments: Department[];
   onNavigateTab: (tab: NavTab) => void;
 }
 
 export const HrDashboard: React.FC<HrDashboardProps> = ({
   currency,
   savings,
+  departments,
   onNavigateTab,
 }) => {
-  const headcountTotal = 620;
-  const contractorCount = 42;
-  const annualWorkforceSpend = 145000000; // ₹14.5 Cr
-  const contractorAnnualSpend = 15000000; // ₹1.5 Cr
+  const headcountTotal = departments.reduce((acc, d) => acc + (d.headcount || 0), 0);
+  const departmentsAtRisk = departments.filter((d) => d.healthStatus === 'OVER_BUDGET' || d.healthStatus === 'WARNING');
 
-  const departmentHeadcount = [
-    { name: 'Core Platform Engineering', count: 245, pct: '40%', contractors: 18, avgCost: '₹22.5L' },
-    { name: 'Global Sales & Revenue', count: 140, pct: '23%', contractors: 4, avgCost: '₹18.0L' },
-    { name: 'Growth & Marketing', count: 65, pct: '10%', contractors: 8, avgCost: '₹14.2L' },
-    { name: 'Product Design & Research', count: 55, pct: '9%', contractors: 3, avgCost: '₹19.5L' },
-    { name: 'Operations & Real Estate', count: 45, pct: '7%', contractors: 6, avgCost: '₹11.0L' },
-    { name: 'People, Talent & Legal', count: 35, pct: '6%', contractors: 2, avgCost: '₹13.5L' },
-    { name: 'Executive & Finance', count: 35, pct: '6%', contractors: 1, avgCost: '₹28.0L' },
-  ];
+  const departmentHeadcount = [...departments]
+    .sort((a, b) => (b.headcount || 0) - (a.headcount || 0))
+    .map((d) => ({
+      name: d.name,
+      count: d.headcount || 0,
+      pct: headcountTotal > 0 ? `${Math.round(((d.headcount || 0) / headcountTotal) * 100)}%` : '0%',
+      annualBudget: d.annualBudget || 0,
+      healthStatus: d.healthStatus,
+    }));
 
   const hrOpportunities = savings.filter(
     (s) => s.category === 'Workforce & Contractors' || s.actionType === 'AUTOMATE'
   );
+  const hrOpportunitiesTotal = hrOpportunities.reduce((acc, s) => acc + s.estimatedSavingAnnual, 0);
 
   return (
     <div className="space-y-6 pb-12">
@@ -95,47 +96,44 @@ export const HrDashboard: React.FC<HrDashboardProps> = ({
       {/* Headcount & Workforce KPIs */}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Total Full-Time Headcount</div>
+          <div className="text-xs text-slate-500 font-medium">Total Headcount</div>
           <div className="mt-2 text-2xl font-bold text-slate-900 tracking-tight">
             {headcountTotal} Employees
           </div>
           <div className="mt-2 text-[11px] text-slate-500">
-            Across 6 operational divisions
+            Across {departments.length} tracked department{departments.length === 1 ? '' : 's'}
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>External Staff Augmentation</span>
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-              {contractorCount} CONTRACTORS
-            </span>
-          </div>
-          <div className="mt-2 text-2xl font-bold text-amber-700 tracking-tight">
-            {formatCurrency(contractorAnnualSpend, currency)}/yr
+          <div className="text-xs text-slate-500 font-medium">Departments Tracked</div>
+          <div className="mt-2 text-2xl font-bold text-slate-900 tracking-tight">
+            {departments.length}
           </div>
           <div className="mt-2 text-[11px] text-slate-500">
-            Avg run-rate: 2.1x internal employee cost
+            {departmentsAtRisk.length > 0
+              ? `${departmentsAtRisk.length} over budget or at warning`
+              : 'All departments within budget'}
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Capacity Optimization Potential</div>
+          <div className="text-xs text-slate-500 font-medium">Workforce Optimization Potential</div>
           <div className="mt-2 text-2xl font-bold text-emerald-700 tracking-tight">
-            ₹62.0L /yr
+            {formatCurrency(hrOpportunitiesTotal, currency)} /yr
           </div>
           <div className="mt-2 text-[11px] text-emerald-600 font-medium">
-            Contractor transition & automation
+            {hrOpportunities.length > 0 ? `${hrOpportunities.length} opportunities identified` : 'None identified yet'}
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Open Hiring Pipeline</div>
+          <div className="text-xs text-slate-500 font-medium">Avg Headcount / Department</div>
           <div className="mt-2 text-2xl font-bold text-slate-900 tracking-tight">
-            18 Positions
+            {departments.length > 0 ? Math.round(headcountTotal / departments.length) : 0}
           </div>
           <div className="mt-2 text-[11px] text-slate-500">
-            3 positions identified as candidate for internal reallocation
+            Employees per tracked department
           </div>
         </div>
       </div>
@@ -144,11 +142,19 @@ export const HrDashboard: React.FC<HrDashboardProps> = ({
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Department Headcount & Workforce Cost Distribution</h2>
-            <p className="text-[11px] text-slate-500">Full-time employees vs. external agency contractor ratios</p>
+            <h2 className="text-sm font-bold text-slate-900">Department Headcount & Budget Distribution</h2>
+            <p className="text-[11px] text-slate-500">Headcount and annual budget per tracked department</p>
           </div>
         </div>
 
+        {departmentHeadcount.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-slate-500">
+            No departments set up yet.{' '}
+            <button onClick={() => onNavigateTab('DEPARTMENT_WORKFLOWS')} className="font-semibold text-blue-600 hover:text-blue-700">
+              Set up your first department
+            </button>
+          </p>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -156,9 +162,8 @@ export const HrDashboard: React.FC<HrDashboardProps> = ({
                 <th className="pb-2 font-semibold">Department</th>
                 <th className="pb-2 font-semibold">Headcount</th>
                 <th className="pb-2 font-semibold">Share</th>
-                <th className="pb-2 font-semibold">Active Contractors</th>
-                <th className="pb-2 font-semibold">Avg Cost / FTE</th>
-                <th className="pb-2 font-semibold">AI Capacity Status</th>
+                <th className="pb-2 font-semibold">Annual Budget</th>
+                <th className="pb-2 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -167,20 +172,15 @@ export const HrDashboard: React.FC<HrDashboardProps> = ({
                   <td className="py-3 font-semibold text-slate-900">{dept.name}</td>
                   <td className="py-3 text-slate-700">{dept.count} members</td>
                   <td className="py-3 text-slate-500">{dept.pct}</td>
+                  <td className="py-3 text-slate-700">{formatCurrency(dept.annualBudget, currency)}</td>
                   <td className="py-3">
-                    <span className={`font-semibold ${dept.contractors > 5 ? 'text-amber-700' : 'text-slate-700'}`}>
-                      {dept.contractors} contractors
-                    </span>
-                  </td>
-                  <td className="py-3 text-slate-700">{dept.avgCost}</td>
-                  <td className="py-3">
-                    {dept.contractors > 10 ? (
+                    {dept.healthStatus === 'OVER_BUDGET' || dept.healthStatus === 'WARNING' ? (
                       <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                        Contractor Transition Opportunity
+                        {dept.healthStatus.replace('_', ' ')}
                       </span>
                     ) : (
                       <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                        Balanced Capacity
+                        {dept.healthStatus?.replace('_', ' ') || 'HEALTHY'}
                       </span>
                     )}
                   </td>
@@ -189,6 +189,7 @@ export const HrDashboard: React.FC<HrDashboardProps> = ({
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* AI Workforce Opportunities */}
@@ -207,6 +208,11 @@ export const HrDashboard: React.FC<HrDashboardProps> = ({
         </div>
 
         <div className="space-y-3">
+          {hrOpportunities.length === 0 && (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-slate-500">
+              No workforce optimization opportunities identified yet. Run an AI audit once you have expense data.
+            </p>
+          )}
           {hrOpportunities.map((opp) => (
             <div
               key={opp.id}

@@ -511,12 +511,12 @@ Include:
 // 4. AI Document & Receipt OCR / Auto-Categorization
 app.post("/api/ai/categorize-receipt", requireAuth, async (req, res) => {
   try {
-    const { receiptText, invoiceData } = req.body;
+    const { receiptText, invoiceData, imageBase64, imageMimeType } = req.body;
     const ai = getGeminiClient();
+    const hasInput = receiptText || invoiceData || imageBase64;
 
-    if (ai && (receiptText || invoiceData)) {
-      const prompt = `Extract expense details from the following receipt or invoice text:
-${receiptText || JSON.stringify(invoiceData)}
+    if (ai && hasInput) {
+      const instructions = `Extract expense details from this receipt or invoice${imageBase64 ? " image" : ""}.
 
 Provide JSON with:
 - vendorName
@@ -526,10 +526,19 @@ Provide JSON with:
 - category (one of: 'Software & SaaS', 'Cloud Infrastructure', 'Hardware & Devices', 'Property & Facilities', 'Workforce & Contractors', 'Travel & Entertainment', 'Marketing & Ads', 'Utilities & Services', 'Legal & Insurance', 'Office Supplies & Misc')
 - subcategory
 - anomalyFlag (null or description if price spike or duplicate risk detected)
-- suggestedCostCenter`;
+- suggestedCostCenter
+
+If a field genuinely cannot be read from the document, leave it blank/zero rather than guessing.`;
+
+      const contents = imageBase64
+        ? [
+            { inlineData: { mimeType: imageMimeType || "image/jpeg", data: imageBase64 } },
+            { text: instructions },
+          ]
+        : `${instructions}\n\nDocument text:\n${receiptText || JSON.stringify(invoiceData)}`;
 
       const genResult = await generateWithRetryAndFallback(ai, {
-        contents: prompt,
+        contents,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
