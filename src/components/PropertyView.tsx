@@ -34,6 +34,11 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
   const totalSeats = properties.reduce((acc, p) => acc + p.capacitySeats, 0);
   const totalOccupied = properties.reduce((acc, p) => acc + p.occupancySeats, 0);
   const overallOccupancyPct = Math.round((totalOccupied / (totalSeats || 1)) * 100);
+  const subleaseCandidates = properties.filter((p) => p.subleasePotential);
+  const identifiedSubleaseAnnual = subleaseCandidates.reduce(
+    (acc, p) => acc + (p.subleasePotential?.estimatedAnnualRevenue || 0),
+    0
+  );
 
   return (
     <div className="space-y-6 pb-12">
@@ -94,15 +99,25 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
           <div className="text-xs text-slate-500 font-medium">Identified Sublease / Downsize</div>
           <div className="mt-2 text-2xl font-bold text-emerald-700 tracking-tight">
-            ₹18.0L /yr
+            {formatCurrency(identifiedSubleaseAnnual, currency, true)} /yr
           </div>
           <div className="mt-2 text-[11px] text-emerald-600 font-medium">
-            Subleasing Unused 5th Floor Wing
+            {subleaseCandidates.length > 0
+              ? `${subleaseCandidates.length} site${subleaseCandidates.length === 1 ? '' : 's'} with sublease potential`
+              : 'No sublease opportunities identified'}
           </div>
         </div>
       </div>
 
-      {/* Property Cards */}
+      {properties.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-14 text-center">
+          <Building className="h-8 w-8 text-slate-400" />
+          <h3 className="mt-3 text-sm font-bold text-slate-900">No properties tracked yet</h3>
+          <p className="mt-1.5 max-w-sm text-xs text-slate-500">
+            Once you add office and facility locations, you'll see rent, occupancy, and sublease opportunities here.
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {properties.map((prop) => {
           const costPerSeat = Math.round(prop.rentAnnual / (prop.capacitySeats || 1));
@@ -213,6 +228,7 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
           );
         })}
       </div>
+      )}
     </div>
   );
 };

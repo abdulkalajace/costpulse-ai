@@ -49,6 +49,11 @@ export const CtoDashboard: React.FC<CtoDashboardProps> = ({
   const unusedLicenses = subscriptions.reduce((acc, s) => acc + s.seatsUnused, 0);
   const redundantSubs = subscriptions.filter((s) => s.status === 'REDUNDANT' || s.status === 'UNDERUTILIZED');
   const serverAssets = assets.filter((a) => a.type === 'SERVER');
+  const idleServerAssets = serverAssets.filter((a) => a.status === 'IDLE' || a.status === 'UNDERUTILIZED' || a.status === 'SURPLUS');
+  const cloudWasteAnnual = idleServerAssets.reduce(
+    (acc, a) => acc + (a.maintenanceCostYearly || 0) + (a.insuranceCostYearly || 0),
+    0
+  );
 
   return (
     <div className="space-y-6 pb-12">
@@ -121,12 +126,14 @@ export const CtoDashboard: React.FC<CtoDashboardProps> = ({
 
         {/* Cloud Waste Alerts */}
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-xs">
-          <div className="text-xs text-gray-500 font-medium">Cloud Waste & Overprovisioning</div>
+          <div className="text-xs text-gray-500 font-medium">Idle Server & Infra Holding Cost</div>
           <div className="mt-2 text-2xl font-bold text-rose-700 tracking-tight">
-            ₹36.0L /yr
+            {formatCurrency(cloudWasteAnnual, currency)} /yr
           </div>
           <div className="mt-2 text-[11px] text-gray-500">
-            12 idle GPU instances + 4.2TB orphaned EBS
+            {idleServerAssets.length > 0
+              ? `${idleServerAssets.length} idle/underutilized server asset${idleServerAssets.length === 1 ? '' : 's'}`
+              : 'No idle server assets detected'}
           </div>
         </div>
       </div>
@@ -163,6 +170,13 @@ export const CtoDashboard: React.FC<CtoDashboardProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              {subscriptions.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-xs text-gray-500">
+                    No SaaS subscriptions tracked yet.
+                  </td>
+                </tr>
+              )}
               {subscriptions.map((sub) => {
                 const usedPct = (sub.seatsUsed / (sub.seatsTotal || 1)) * 100;
                 return (

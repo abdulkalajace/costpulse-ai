@@ -66,6 +66,16 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
 
   const totalSaaSAnnual = subscriptions.reduce((acc, s) => acc + s.annualCost, 0);
   const totalUnusedSeats = subscriptions.reduce((acc, s) => acc + s.seatsUnused, 0);
+  const projectedIdleWaste = subscriptions.reduce((acc, s) => {
+    const perSeatAnnual = s.seatsTotal > 0 ? s.annualCost / s.seatsTotal : 0;
+    return acc + perSeatAnnual * (s.seatsUnused || 0);
+  }, 0);
+  const now = Date.now();
+  const sixtyDaysMs = 60 * 24 * 60 * 60 * 1000;
+  const upcomingRenewals = subscriptions.filter((s) => {
+    const t = Date.parse(s.renewalDate);
+    return !Number.isNaN(t) && t >= now && t - now <= sixtyDaysMs;
+  }).length;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,14 +152,16 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
             {totalUnusedSeats} Idle Seats
           </div>
           <div className="mt-2 text-[11px] text-amber-600 font-medium">
-            Projected waste: ~₹12.4L/yr in zero-login licenses
+            {totalUnusedSeats > 0
+              ? `Projected waste: ~${formatCurrency(projectedIdleWaste, currency, true)}/yr in unused seats`
+              : 'No idle seats detected'}
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
           <div className="text-xs text-slate-500 font-medium">Upcoming Renewals (&lt; 60 Days)</div>
           <div className="mt-2 text-2xl font-bold text-indigo-700 tracking-tight">
-            3 Contracts
+            {upcomingRenewals} Contract{upcomingRenewals === 1 ? '' : 's'}
           </div>
           <div className="mt-2 text-[11px] text-slate-500">
             Optimal window to renegotiate or downgrade
@@ -204,6 +216,22 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {filteredSubs.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-xs text-slate-500">
+                    {subscriptions.length === 0 ? (
+                      <>
+                        No subscriptions tracked yet.{' '}
+                        <button onClick={() => setShowAddModal(true)} className="font-semibold text-blue-600 hover:text-blue-700">
+                          Add your first subscription
+                        </button>
+                      </>
+                    ) : (
+                      'No subscriptions match the current filters.'
+                    )}
+                  </td>
+                </tr>
+              )}
               {filteredSubs.map((sub) => {
                 const usedPct = Math.round((sub.seatsUsed / (sub.seatsTotal || 1)) * 100);
                 return (

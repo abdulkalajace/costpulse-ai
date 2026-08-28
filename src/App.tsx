@@ -478,6 +478,50 @@ export function App() {
     logAuditEvent('REGISTERED_ASSET', 'ASSET', `Registered hardware asset "${ast.name}" (${ast.serialNumber})`);
   };
 
+  // Handler: Add Vendor
+  const handleAddVendor = (newVendor: Partial<Vendor>) => {
+    const vendor: Vendor = {
+      id: `vnd-${Date.now()}`,
+      companyId: selectedCompany.id,
+      name: newVendor.name || 'New Vendor',
+      category: newVendor.category || 'Uncategorized',
+      departmentName: newVendor.departmentName || 'Unassigned',
+      totalSpendAnnual: newVendor.totalSpendAnnual || 0,
+      currency: currency,
+      monthlySpendAverage: newVendor.monthlySpendAverage || Math.round((newVendor.totalSpendAnnual || 0) / 12),
+      activeContractsCount: newVendor.activeContractsCount || 1,
+      contractRenewalDate: newVendor.contractRenewalDate || '',
+      paymentTerms: newVendor.paymentTerms || 'NET30',
+      priceChangePercent12m: newVendor.priceChangePercent12m || 0,
+      riskScore: newVendor.riskScore || 'LOW',
+      status: newVendor.status || 'ACTIVE',
+    };
+
+    setVendors((prev) => [vendor, ...prev]);
+    logAuditEvent('REGISTERED_VENDOR', 'SYSTEM', `Added vendor "${vendor.name}" (${vendor.category})`);
+  };
+
+  // Handler: Add Budget
+  const handleAddBudget = (newBudget: Partial<Budget>) => {
+    const budget: Budget = {
+      id: `bgt-${Date.now()}`,
+      companyId: selectedCompany.id,
+      departmentName: newBudget.departmentName || 'Unassigned',
+      category: newBudget.category || 'Office Supplies & Misc',
+      fiscalQuarter: newBudget.fiscalQuarter || 'Q1 FY26',
+      allocatedAmount: newBudget.allocatedAmount || 0,
+      spentAmount: newBudget.spentAmount || 0,
+      forecastAmount: newBudget.forecastAmount || newBudget.allocatedAmount || 0,
+      currency: currency,
+      varianceAmount: newBudget.varianceAmount ?? (newBudget.allocatedAmount || 0),
+      variancePercent: newBudget.variancePercent || 0,
+      status: newBudget.status || 'ON_TRACK',
+    };
+
+    setBudgets((prev) => [budget, ...prev]);
+    logAuditEvent('CREATED_BUDGET', 'BUDGET', `Created budget for "${budget.departmentName}" (${budget.fiscalQuarter})`);
+  };
+
   // Handler: Add Procurement Request
   const handleAddProcurement = (newReq: Partial<ProcurementRequest>) => {
     const req: ProcurementRequest = {
@@ -785,6 +829,7 @@ export function App() {
           vendors={vendors}
           currency={currency}
           userRole={currentUser.role}
+          onAddVendor={handleAddVendor}
           onOpenAlternativeEngine={(item) => setAlternativeTarget(item)}
         />
       );
@@ -817,6 +862,7 @@ export function App() {
         <BudgetsView
           budgets={budgets}
           currency={currency}
+          onAddBudget={handleAddBudget}
           onOpenSimulator={() => {
             setCurrentTab('SAVINGS_CENTER');
           }}

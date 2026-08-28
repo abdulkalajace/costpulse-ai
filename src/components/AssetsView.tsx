@@ -211,6 +211,22 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {filteredAssets.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-xs text-slate-500">
+                    {assets.length === 0 ? (
+                      <>
+                        No assets registered yet.{' '}
+                        <button onClick={() => setShowAddModal(true)} className="font-semibold text-blue-600 hover:text-blue-700">
+                          Register your first asset
+                        </button>
+                      </>
+                    ) : (
+                      'No assets match the current filters.'
+                    )}
+                  </td>
+                </tr>
+              )}
               {filteredAssets.map((asset) => (
                 <tr key={asset.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4 font-semibold text-slate-900">

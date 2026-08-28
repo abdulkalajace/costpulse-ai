@@ -101,7 +101,7 @@ export const AiChatAnalyst: React.FC<AiChatAnalystProps> = ({
         id: `ai-err-${Date.now()}`,
         role: 'assistant',
         content:
-          '⚠️ **Cost Intelligence Telemetry Note:**\nBased on your active records, our heuristic engine detected **₹38.6L/year in optimization headroom**:\n1. **AWS Idle Compute**: 12 unutilized GPU EC2 nodes (save ₹36.0L/yr)\n2. **Office Sublease**: 5th floor wing underutilized (save ₹18.0L/yr)\n3. **Redundant Video Tools**: Zoom + Google Meet overlap (save ₹4.2L/yr)',
+          "⚠️ I couldn't reach the AI service just now. Please check your connection and try again — I never fabricate figures when the request fails.",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);

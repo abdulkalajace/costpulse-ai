@@ -23,6 +23,9 @@ import {
   LogOut,
   LogIn,
   KeyRound,
+  Laptop,
+  PieChart,
+  ClipboardList,
 } from 'lucide-react';
 import { Company, UserProfile, UserRole, IndustryVertical } from '../types';
 
@@ -162,9 +165,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'VENDORS' as NavTab,
-          label: 'Vendors & Procurement',
+          label: 'Vendors',
           icon: Store,
           visible: ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD'].includes(userRole),
+        },
+        {
+          id: 'ASSETS' as NavTab,
+          label: 'Assets & Hardware',
+          icon: Laptop,
+          visible: !isEmployee,
+        },
+        {
+          id: 'BUDGETS' as NavTab,
+          label: 'Budgets',
+          icon: PieChart,
+          visible: ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD', 'MANAGER'].includes(userRole),
+        },
+        {
+          id: 'PROCUREMENT' as NavTab,
+          label: 'Procurement & Approvals',
+          icon: ClipboardList,
+          badge: pendingApprovalsCount > 0 ? `${pendingApprovalsCount} pending` : undefined,
+          badgeColor: 'bg-amber-50 text-amber-700 font-bold border border-amber-200',
+          visible: true,
+        },
+        {
+          id: 'PROPERTY' as NavTab,
+          label: 'Property & Locations',
+          icon: Building,
+          visible: !isEmployee,
         },
       ],
     },

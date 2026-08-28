@@ -1,28 +1,25 @@
 import React, { useState } from 'react';
-import {
-  PieChart,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle2,
-  Calendar,
-  Layers,
-  ArrowRight,
-  Calculator,
-  Sliders,
-  Building,
-  ShieldCheck,
-} from 'lucide-react';
-import { Budget, CurrencyCode } from '../types';
-import { formatCurrency, getStatusBadgeClass } from '../utils/formatters';
+import { PieChart, Sliders, Plus } from 'lucide-react';
+import { Budget, CurrencyCode, ExpenseCategory } from '../types';
+import { formatCurrency } from '../utils/formatters';
+import { EmptyState } from './ui/EmptyState';
 
 interface BudgetsViewProps {
   budgets: Budget[];
   currency: CurrencyCode;
+  onAddBudget: (budget: Partial<Budget>) => void;
   onOpenSimulator?: () => void;
 }
 
-export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onOpenSimulator }) => {
+export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onAddBudget, onOpenSimulator }) => {
   const [filterRisk, setFilterRisk] = useState<'ALL' | 'OVER' | 'WARNING' | 'HEALTHY'>('ALL');
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  // Add Budget form state
+  const [departmentName, setDepartmentName] = useState('');
+  const [category, setCategory] = useState<ExpenseCategory>('Software & SaaS');
+  const [fiscalQuarter, setFiscalQuarter] = useState('Q1 FY26');
+  const [allocatedAmount, setAllocatedAmount] = useState(0);
 
   const totalAllocated = budgets.reduce((acc, b) => acc + b.allocatedAmount, 0);
   const totalSpent = budgets.reduce((acc, b) => acc + b.spentAmount, 0);
@@ -43,6 +40,25 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onO
     return p >= 0.8 && p < 1;
   }).length;
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!departmentName.trim() || !allocatedAmount) return;
+    onAddBudget({
+      departmentName: departmentName.trim(),
+      category,
+      fiscalQuarter,
+      allocatedAmount: Number(allocatedAmount),
+      spentAmount: 0,
+      forecastAmount: Number(allocatedAmount),
+      varianceAmount: Number(allocatedAmount),
+      variancePercent: 0,
+      status: 'ON_TRACK',
+    });
+    setDepartmentName('');
+    setAllocatedAmount(0);
+    setShowAddModal(false);
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
@@ -61,17 +77,43 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onO
           </p>
         </div>
 
-        {onOpenSimulator && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={onOpenSimulator}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-xs"
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-xs"
           >
-            <Sliders className="h-3.5 w-3.5" />
-            <span>Launch Runway Simulator</span>
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add Budget</span>
           </button>
-        )}
+          {onOpenSimulator && budgets.length > 0 && (
+            <button
+              onClick={onOpenSimulator}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-xs"
+            >
+              <Sliders className="h-3.5 w-3.5" />
+              <span>Launch Runway Simulator</span>
+            </button>
+          )}
+        </div>
       </div>
 
+      {budgets.length === 0 ? (
+        <EmptyState
+          icon={PieChart}
+          title="No budgets set up yet"
+          description="Allocate a fiscal budget per department to track spend against a cap and catch overspending early."
+          action={
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add your first budget</span>
+            </button>
+          }
+        />
+      ) : (
+      <>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
@@ -185,7 +227,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onO
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900">{b.departmentName}</h2>
-                  <div className="text-[11px] text-slate-500">{b.period} • {b.fiscalYear}</div>
+                  <div className="text-[11px] text-slate-500">{b.category} • {b.fiscalQuarter}</div>
                 </div>
 
                 <span
@@ -231,6 +273,92 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onO
           );
         })}
       </div>
+      </>
+      )}
+
+      {/* Add Budget Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="font-bold text-slate-900 text-sm">Add Budget</div>
+              <button onClick={() => setShowAddModal(false)} className="text-xs text-slate-400">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Department</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={departmentName}
+                  onChange={(e) => setDepartmentName(e.target.value)}
+                  placeholder="e.g. Engineering"
+                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Category</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  >
+                    <option value="Software & SaaS">Software & SaaS</option>
+                    <option value="Cloud Infrastructure">Cloud Infrastructure</option>
+                    <option value="Hardware & Devices">Hardware & Devices</option>
+                    <option value="Property & Facilities">Property & Facilities</option>
+                    <option value="Workforce & Contractors">Workforce & Contractors</option>
+                    <option value="Travel & Entertainment">Travel & Entertainment</option>
+                    <option value="Marketing & Ads">Marketing & Ads</option>
+                    <option value="Utilities & Services">Utilities & Services</option>
+                    <option value="Legal & Insurance">Legal & Insurance</option>
+                    <option value="Office Supplies & Misc">Office Supplies & Misc</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Fiscal Quarter</label>
+                  <input
+                    type="text"
+                    value={fiscalQuarter}
+                    onChange={(e) => setFiscalQuarter(e.target.value)}
+                    placeholder="e.g. Q1 FY26"
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Allocated Amount ({currency})</label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  value={allocatedAmount}
+                  onChange={(e) => setAllocatedAmount(Number(e.target.value))}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white">
+                  Save Budget
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -362,26 +362,21 @@ Response Rules:
       }
     }
 
-    // Smart heuristic response if model is unavailable or in high demand
-    let fallbackReply = `Based on your role as **${activeRole}**, here is the relevant cost intelligence breakdown:\n\n`;
-    if (activeRole === "EMPLOYEE") {
-      fallbackReply += `• You have 1 pending travel reimbursement for ₹3,80,000.\n• You have 1 active Apple MacBook Pro assigned.\n• Department: ${userProfile?.departmentName || "Engineering"}`;
-    } else if (activeRole === "CTO") {
-      fallbackReply += `• **Total Technology Spend**: ₹3.24 Cr/year\n• **Cloud Inefficiencies**: ₹36L/yr in idle GPU nodes & orphaned EBS volumes.\n• **Software Seat Waste**: 38 unused Salesforce seats + 142 redundant Zoom seats.\n• **Top Action**: Standardize on Google Meet to capture ₹20.7L/yr instant savings.`;
-    } else {
-      fallbackReply += `• **Total Annual Company Spend**: ₹21.84 Cr\n• **Potential Annual Savings Identified**: ₹3.86 Cr across 7 opportunities.\n• **Confirmed & Realized Savings**: ₹77.5L achieved to date.\n• **Key Inefficiencies**: Bengaluru HQ Floor 4 underutilization (34.2% occupancy), redundant Zoom/Meet licenses, and AWS compute overages.`;
-    }
-
+    // No Gemini key configured (or the model call failed) — be honest about
+    // it rather than inventing numbers. Never fabricate spend/waste figures.
     res.json({
       success: true,
-      reply: fallbackReply,
+      reply:
+        "AI-generated answers aren't available right now (no GEMINI_API_KEY is configured, or the AI service is temporarily unavailable). " +
+        "I won't guess at numbers — please check the Expenses, Subscriptions, and Savings Center views for your real figures, " +
+        "or ask again once AI is configured.",
       aiPowered: false,
     });
   } catch (error: any) {
     console.warn("Recovered from /api/ai/chat error:", error.message);
     res.json({
       success: true,
-      reply: "CostPulse AI Telemetry is monitoring active financial pipelines. All department cost ceilings are currently within verified thresholds.",
+      reply: "Something went wrong answering that — please try again.",
       aiPowered: false,
     });
   }
@@ -557,13 +552,13 @@ Provide JSON with:
       if (genResult?.text) {
         const parsed = JSON.parse(genResult.text);
         const extractedObj = {
-          vendorName: parsed.vendorName || "Cloudflare Inc",
-          amount: parsed.amount || 412000,
+          vendorName: parsed.vendorName || "",
+          amount: parsed.amount || 0,
           currency: parsed.currency || "INR",
           date: parsed.date || new Date().toISOString().split("T")[0],
-          category: parsed.category || "Cloud Infrastructure",
-          department: "Core Platform Engineering",
-          description: parsed.subcategory ? `${parsed.category} - ${parsed.subcategory}` : "Enterprise CDN & Security Services",
+          category: parsed.category || "Office Supplies & Misc",
+          department: "",
+          description: parsed.subcategory ? `${parsed.category} - ${parsed.subcategory}` : "",
           aiAnomalyNote: parsed.anomalyFlag || null,
         };
 
@@ -577,14 +572,17 @@ Provide JSON with:
       }
     }
 
+    // No AI available (or nothing to extract from) — return an empty draft
+    // rather than fabricated vendor/amount data, so nothing false ever gets
+    // written to the user's real expense ledger.
     const fallbackExtracted = {
-      vendorName: "Cloudflare Inc",
-      amount: 412000,
+      vendorName: "",
+      amount: 0,
       currency: "INR",
-      date: "2026-08-22",
-      category: "Cloud Infrastructure",
-      department: "Core Platform Engineering",
-      description: "Enterprise CDN, DDoS Protection & Bot Management Q3",
+      date: new Date().toISOString().split("T")[0],
+      category: "Office Supplies & Misc",
+      department: "",
+      description: "",
       aiAnomalyNote: null,
     };
 
@@ -599,13 +597,13 @@ Provide JSON with:
     res.json({
       success: true,
       extracted: {
-        vendorName: "Scanned Vendor",
-        amount: 50000,
+        vendorName: "",
+        amount: 0,
         currency: "INR",
         date: new Date().toISOString().split("T")[0],
-        category: "Cloud Infrastructure",
-        department: "General",
-        description: "Scanned Enterprise Receipt",
+        category: "Office Supplies & Misc",
+        department: "",
+        description: "",
         aiAnomalyNote: null,
       },
       aiPowered: false,
@@ -650,31 +648,19 @@ Include:
       }
     }
 
-    const defaultReport = `# AI Executive Cost Intelligence Report
-**Target Role**: ${activeRole} | **Period**: ${period || "Q2 FY27"} | **Status**: Verified
+    const hasMetrics = metrics && typeof metrics === "object" && Object.keys(metrics).length > 0;
+    const defaultReport = `# Executive Cost Intelligence Report
+**Target Role**: ${activeRole} | **Period**: ${period || "Current period"} | **Status**: AI report generation unavailable
 
 ---
 
 ## 1. Executive Summary
-During this fiscal period, operating expenses stabilized with **₹3.86 Cr in total potential annual savings** identified across 7 actionable vectors. To date, **₹77.5L in recurring annual savings have been confirmed and realized**.
+${hasMetrics
+  ? `Figures on file: ${JSON.stringify(metrics)}.`
+  : "AI-generated report content isn't available right now (no GEMINI_API_KEY configured, or the AI service is temporarily unavailable), and no metrics were supplied to summarize deterministically."}
 
----
-
-## 2. Spend Variance Analysis
-- **Cloud Infrastructure (+24.8% spike)**: Driven by unattached gp3 EBS storage volumes and idle GPU instances in AWS.
-- **Software & SaaS (+8.5% YoY)**: 38 dormant Salesforce licenses and duplicate Zoom subscriptions where Google Meet is already active.
-- **Real Estate Facilities (34.2% Occupancy)**: Bengaluru HQ Floor 4 operates at low physical density with full HVAC/lease liabilities.
-
----
-
-## 3. High-Priority Action Items
-1. **Sublease Bengaluru HQ Floor 4**: Consolidate teams onto lower floors to recover **₹1.45 Cr/year**.
-2. **Decommission Idle AWS GPU Nodes**: Immediate monthly run-rate reduction of **₹3.6L/month**.
-3. **Right-Size Salesforce Licenses**: Downgrade unassigned seats ahead of contract renewal (**₹28.5L/year savings**).
-4. **Consolidate Procurement RFPs**: Standardize multi-vendor stationery and hardware purchasing (**₹12.5L/year savings**).
-
----
-*Generated autonomously by CostPulse AI Engine. All figures cross-referenced with enterprise telemetry.*`;
+## 2. Next Step
+Review the Expenses, Subscriptions, Assets, and Savings Center screens directly for your real, up-to-date figures. This deterministic fallback never fabricates spend, vendor, or savings figures.`;
 
     res.json({
       success: true,
@@ -686,8 +672,8 @@ During this fiscal period, operating expenses stabilized with **₹3.86 Cr in to
     console.warn("Recovered from /api/ai/executive-report error:", error.message);
     res.json({
       success: true,
-      markdown: `# Cost Intelligence Report\n\nAll department telemetry within approved budgetary thresholds.`,
-      reportMarkdown: `# Cost Intelligence Report\n\nAll department telemetry within approved budgetary thresholds.`,
+      markdown: `# Cost Intelligence Report\n\nSomething went wrong generating this report — please try again.`,
+      reportMarkdown: `# Cost Intelligence Report\n\nSomething went wrong generating this report — please try again.`,
       aiPowered: false,
     });
   }

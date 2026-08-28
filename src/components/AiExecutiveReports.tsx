@@ -47,26 +47,33 @@ export const AiExecutiveReports: React.FC<AiExecutiveReportsProps> = ({
       const data = await res.json();
       setReportContent(data.markdown || '');
     } catch (e) {
+      // Honest fallback: only figures already known to be real (from props),
+      // never fabricated line items or a fake governance sign-off.
+      const topOpportunities = [...savings]
+        .sort((a, b) => b.estimatedSavingAnnual - a.estimatedSavingAnnual)
+        .slice(0, 5);
+
       setReportContent(`
 # EXECUTIVE COST INTELLIGENCE MEMORANDUM (${company.fiscalYear})
-**Organization:** ${company.name}  
-**Status:** Generated via CostPulse AI  
-**Scope:** Confidential Executive Review  
+**Organization:** ${company.name}
+**Status:** AI report generation unavailable — showing figures computed directly from your data
+**Scope:** Confidential Executive Review
 
 ---
 
 ### 1. Executive Summary & Financial Trajectory
-Total annualized operating spend is running at **${formatCurrency(company.totalExpensesYear, currency)}** against annual revenue of **${formatCurrency(company.annualRevenue, currency)}**.  
-The AI Cost Intelligence engine has identified **${formatCurrency(potentialSavings, currency)}** in actionable, high-confidence cost reductions across cloud compute, SaaS license right-sizing, and facility subleasing.
+Total annualized operating spend is running at **${formatCurrency(company.totalExpensesYear, currency)}** against annual revenue of **${formatCurrency(company.annualRevenue, currency)}**.
+${potentialSavings > 0
+  ? `**${formatCurrency(potentialSavings, currency)}** in identified cost-cutting opportunities is currently on file.`
+  : 'No cost-cutting opportunities are on file yet — run an AI audit once you have expense and subscription data.'}
 
-### 2. Immediate Capital Recovery Action Items
-* **Cloud Overprovisioning:** Decommission 12 idle GPU instances in AWS us-east-1 and prune 4.2TB orphaned snapshots (Annual Recovery: **₹36.0L**).
-* **Real Estate Optimization:** Sublease 10,000 sqft underutilized floor space at Bengaluru Campus (Annual Recovery: **₹18.0L**).
-* **Redundant Video Conferencing:** Standardize on Google Meet; terminate legacy Zoom Enterprise agreement (Annual Recovery: **₹4.2L**).
+### 2. Top Identified Opportunities
+${topOpportunities.length > 0
+  ? topOpportunities.map((s) => `* **${s.title}:** ${formatCurrency(s.estimatedSavingAnnual, currency)}/yr — ${s.problem}`).join('\n')
+  : '* None on file yet.'}
 
-### 3. Governance Sign-off
-* **Chief Financial Officer:** Reviewed
-* **Managing Director / CEO:** Approved for Q3 Execution
+### 3. Note
+This is a deterministic fallback (no GEMINI_API_KEY configured, or the AI service is temporarily unavailable) — it reflects only your real recorded data, not an AI-narrated analysis or an approved board memo.
       `);
     } finally {
       setIsGenerating(false);

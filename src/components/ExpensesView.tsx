@@ -228,6 +228,23 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {filteredExpenses.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-10 text-center text-xs text-slate-500">
+                    {expenses.length === 0 ? (
+                      <>
+                        No expenses yet.{' '}
+                        <button onClick={() => setShowAddModal(true)} className="font-semibold text-blue-600 hover:text-blue-700">
+                          Add your first expense
+                        </button>{' '}
+                        or scan a receipt.
+                      </>
+                    ) : (
+                      'No expenses match the current filters.'
+                    )}
+                  </td>
+                </tr>
+              )}
               {filteredExpenses.map((exp) => (
                 <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4 font-semibold text-slate-900">
