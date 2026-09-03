@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "./db";
-import { accounts, users, aiUsageLog } from "./schema";
+import { accounts, users, aiUsageLog, auditLog } from "./schema";
 import { createId } from "./id";
 import {
   hashPassword,
@@ -257,6 +257,58 @@ router.put("/workspace", requireAuth, async (req, res) => {
   } catch (error: any) {
     console.error("put workspace error:", error.message);
     res.status(500).json({ success: false, error: "Failed to save workspace" });
+  }
+});
+
+/* ----------------------------- AUDIT LOG -------------------------------- */
+
+// Insert-only: there is deliberately no PUT/PATCH/DELETE on this resource.
+// Anyone signed into the account can write an entry (any user can act), but
+// no one — including the account itself — can rewrite history afterward.
+router.post("/audit-log", requireAuth, async (req, res) => {
+  try {
+    const { action, entityType, entityId, entityName, changes, details } = req.body || {};
+    if (!action || !entityType || !details) {
+      return res.status(400).json({ success: false, error: "action, entityType, and details are required" });
+    }
+    const [user] = await db.select().from(users).where(eq(users.id, req.session!.userId)).limit(1);
+    if (!user) return res.status(401).json({ success: false, error: "Session invalid" });
+
+    const [row] = await db
+      .insert(auditLog)
+      .values({
+        accountId: req.session!.accountId,
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        action: String(action),
+        entityType: String(entityType),
+        entityId: entityId ? String(entityId) : null,
+        entityName: entityName ? String(entityName) : null,
+        changes: Array.isArray(changes) ? changes : null,
+        details: String(details),
+      })
+      .returning();
+
+    res.json({ success: true, log: row });
+  } catch (error: any) {
+    console.error("post audit-log error:", error.message);
+    res.status(500).json({ success: false, error: "Failed to record audit event" });
+  }
+});
+
+router.get("/audit-log", requireAuth, async (req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.accountId, req.session!.accountId))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(500);
+    res.json({ success: true, logs: rows });
+  } catch (error: any) {
+    console.error("get audit-log error:", error.message);
+    res.status(500).json({ success: false, error: "Failed to load audit log" });
   }
 });
 

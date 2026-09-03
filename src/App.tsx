@@ -26,6 +26,7 @@ import {
   Budget,
   ProcurementRequest,
   AuditLog,
+  AuditLogChange,
   OpportunityStatus,
   AssetStatus,
   ExpenseCategory,
@@ -330,22 +331,63 @@ export function App() {
     logAuditEvent('USER_AUTHENTICATED', 'SECURITY', `Session authenticated for ${u.name} (${u.role})`);
   };
 
-  // Handler: Log an audit event
-  const logAuditEvent = (action: string, entityType: 'EXPENSE' | 'SUBSCRIPTION' | 'ASSET' | 'SAVINGS' | 'BUDGET' | 'PROCUREMENT' | 'SYSTEM' | 'SECURITY', details: string) => {
-    const newLog: AuditLog = {
+  // Handler: Log an audit event. Writes to the real server-side, insert-only
+  // audit_log table (so it can't be silently rewritten by a later workspace
+  // save) and also keeps a local optimistic copy for immediate display.
+  // `meta` carries the structured field-level diff for edits so "what
+  // changed" can be reconstructed generically instead of only from a
+  // hand-written sentence.
+  const logAuditEvent = (
+    action: string,
+    entityType: AuditLog['entityType'],
+    details: string,
+    meta?: { entityId?: string; entityName?: string; changes?: AuditLogChange[] }
+  ) => {
+    const optimisticLog: AuditLog = {
       id: `log-${Date.now()}`,
-      companyId: selectedCompany.id,
       userName: currentUser.name,
       userRole: currentUser.role,
       action,
       entityType,
+      entityId: meta?.entityId,
+      entityName: meta?.entityName,
+      changes: meta?.changes,
       details,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      // No real client-IP capture is wired up yet — leave honestly blank
-      // rather than stamping every event with the same fake address.
-      ipAddress: '',
+      createdAt: new Date().toISOString(),
     };
-    setAuditLogs((prev) => [newLog, ...prev]);
+    setAuditLogs((prev) => [optimisticLog, ...prev]);
+
+    fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        entityType,
+        entityId: meta?.entityId,
+        entityName: meta?.entityName,
+        changes: meta?.changes,
+        details,
+      }),
+    }).catch(() => {
+      // Best-effort: the optimistic local entry still shows in-session even
+      // if the write fails (e.g. offline) — it just won't be durable.
+    });
+  };
+
+  /** Builds a field-level diff between the previous and next version of a
+   * record, skipping unchanged fields and any keys in `ignore` (ids,
+   * derived/computed fields that shouldn't show up as "changes"). */
+  const diffFields = <T extends Record<string, any>>(before: T, after: T, ignore: string[] = []): AuditLogChange[] => {
+    const changes: AuditLogChange[] = [];
+    const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+    keys.forEach((key) => {
+      if (ignore.includes(key)) return;
+      const oldValue = (before as any)?.[key];
+      const newValue = (after as any)?.[key];
+      if (typeof oldValue === 'object' || typeof newValue === 'object') return;
+      if (oldValue !== newValue) changes.push({ field: key, oldValue: oldValue ?? null, newValue: newValue ?? null });
+    });
+    return changes;
   };
 
   // Handler: Update Savings Opportunity Status
@@ -395,7 +437,44 @@ export function App() {
     };
 
     setExpenses((prev) => [exp, ...prev]);
-    logAuditEvent('LOGGED_EXPENSE', 'EXPENSE', `Expense created: "${exp.description}" (${exp.amount} ${exp.currency})`);
+    logAuditEvent('CREATED_EXPENSE', 'EXPENSE', `Expense created: "${exp.description}" (${exp.amount} ${exp.currency})`, {
+      entityId: exp.id,
+      entityName: exp.description,
+    });
+  };
+
+  // Handler: Update Expense — computes a real field-level diff so the audit
+  // trail shows exactly what changed, not just that "something" did.
+  const handleUpdateExpense = (id: string, updates: Partial<Expense>) => {
+    setExpenses((prev) =>
+      prev.map((e) => {
+        if (e.id !== id) return e;
+        const updated = { ...e, ...updates };
+        const changes = diffFields(e, updated, ['id', 'companyId', 'employeeId', 'departmentId', 'vendorId', 'costCenter', 'tags']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_EXPENSE', 'EXPENSE', `Edited expense "${e.description}"`, {
+            entityId: e.id,
+            entityName: updated.description,
+            changes,
+          });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete Expense
+  const handleDeleteExpense = (id: string) => {
+    setExpenses((prev) => {
+      const target = prev.find((e) => e.id === id);
+      if (target) {
+        logAuditEvent('DELETED_EXPENSE', 'EXPENSE', `Deleted expense "${target.description}" (${target.amount} ${target.currency})`, {
+          entityId: target.id,
+          entityName: target.description,
+        });
+      }
+      return prev.filter((e) => e.id !== id);
+    });
   };
 
   // Handler: Batch Import
@@ -773,6 +852,8 @@ export function App() {
           subscriptions={subscriptions}
           company={selectedCompany}
           onAddExpense={handleAddExpense}
+          onUpdateExpense={handleUpdateExpense}
+          onDeleteExpense={handleDeleteExpense}
           onOpenReceiptScan={() => setIsReceiptScanOpen(true)}
           onApproveExpense={handleApproveExpense}
           onRejectExpense={handleRejectExpense}
@@ -901,7 +982,7 @@ export function App() {
     }
 
     if (currentTab === 'AUDIT_LOGS') {
-      return <AuditLogsView logs={auditLogs} />;
+      return <AuditLogsView localLogs={auditLogs} />;
     }
 
     if (currentTab === 'SETTINGS') {

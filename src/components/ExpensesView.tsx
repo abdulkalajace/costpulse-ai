@@ -16,6 +16,8 @@ import {
   Calculator,
   ShieldCheck,
   Zap,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { Expense, CurrencyCode, UserRole, Budget, Subscription, Company } from '../types';
 import { formatCurrency, getStatusBadgeClass } from '../utils/formatters';
@@ -31,12 +33,24 @@ interface ExpensesViewProps {
   subscriptions?: Subscription[];
   company?: Company;
   onAddExpense: (expense: Partial<Expense>) => void;
+  onUpdateExpense?: (id: string, updates: Partial<Expense>) => void;
+  onDeleteExpense?: (id: string) => void;
   onOpenReceiptScan: () => void;
   onApproveExpense: (id: string) => void;
   onRejectExpense: (id: string, reason?: string) => void;
   onInspectCostBurden?: (expense: Expense) => void;
   onOpenNegotiation?: (vendorName: string, annualSpend: number, category?: string) => void;
 }
+
+const emptyForm = (currentUserDepartment?: string, currentUserName?: string) => ({
+  desc: '',
+  amount: '',
+  category: 'Software & SaaS',
+  vendor: '',
+  dept: currentUserDepartment || '',
+  employee: currentUserName || '',
+  recurring: 'Monthly' as 'One-Time' | 'Monthly' | 'Quarterly' | 'Annual',
+});
 
 export const ExpensesView: React.FC<ExpensesViewProps> = ({
   expenses,
@@ -49,6 +63,8 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
   subscriptions = [],
   company,
   onAddExpense,
+  onUpdateExpense,
+  onDeleteExpense,
   onOpenReceiptScan,
   onApproveExpense,
   onRejectExpense,
@@ -59,6 +75,13 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
   const [filterAnomaly, setFilterAnomaly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Editing/deleting an existing record is limited to roles that can
+  // already approve spend — an ordinary employee can still log their own
+  // expense, but can't quietly rewrite or erase one after the fact.
+  const canManage = Boolean(onUpdateExpense || onDeleteExpense) && ['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
 
   // Form states
   const [desc, setDesc] = useState('');
@@ -99,26 +122,60 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
   const totalSpent = filteredExpenses.reduce((acc, e) => acc + e.amount, 0);
   const pendingCount = expenses.filter((e) => e.approvalStatus === 'PENDING').length;
 
+  const resetForm = () => {
+    const f = emptyForm(currentUserDepartment, currentUserName);
+    setDesc(f.desc);
+    setAmount(f.amount);
+    setCategory(f.category);
+    setVendor(f.vendor);
+    setDept(f.dept);
+    setEmployee(f.employee);
+    setRecurring(f.recurring);
+    setEditingId(null);
+  };
+
+  const openEdit = (exp: Expense) => {
+    setDesc(exp.description);
+    setAmount(String(exp.amount));
+    setCategory(exp.category);
+    setVendor(exp.vendorName);
+    setDept(exp.departmentName);
+    setEmployee(exp.employeeName);
+    setRecurring(exp.recurring);
+    setEditingId(exp.id);
+    setShowAddModal(true);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!desc || !amount) return;
 
-    onAddExpense({
-      description: desc,
-      amount: Number(amount),
-      category: category as any,
-      vendorName: vendor || 'Corporate Vendor',
-      date: new Date().toISOString().split('T')[0],
-      departmentName: dept,
-      employeeName: employee,
-      employeeId: 'usr-manual',
-      recurring: recurring,
-      approvalStatus: 'APPROVED',
-    });
+    if (editingId && onUpdateExpense) {
+      onUpdateExpense(editingId, {
+        description: desc,
+        amount: Number(amount),
+        category: category as any,
+        vendorName: vendor || 'Corporate Vendor',
+        departmentName: dept,
+        employeeName: employee,
+        recurring: recurring,
+      });
+    } else {
+      onAddExpense({
+        description: desc,
+        amount: Number(amount),
+        category: category as any,
+        vendorName: vendor || 'Corporate Vendor',
+        date: new Date().toISOString().split('T')[0],
+        departmentName: dept,
+        employeeName: employee,
+        employeeId: 'usr-manual',
+        recurring: recurring,
+        approvalStatus: 'APPROVED',
+      });
+    }
 
-    setDesc('');
-    setAmount('');
-    setVendor('');
+    resetForm();
     setShowAddModal(false);
   };
 
@@ -155,7 +212,10 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
           </button>
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              resetForm();
+              setShowAddModal(true);
+            }}
             className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -232,12 +292,13 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                 {['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD', 'MANAGER'].includes(userRole) && (
                   <th className="py-3 px-4 font-semibold text-right">Approval Decision</th>
                 )}
+                {canManage && <th className="py-3 px-4 font-semibold text-right">Manage</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-xs text-slate-500">
+                  <td colSpan={10} className="px-4 py-10 text-center text-xs text-slate-500">
                     {expenses.length === 0 ? (
                       <>
                         No expenses yet.{' '}
@@ -349,6 +410,26 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                       )}
                     </td>
                   )}
+                  {canManage && (
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openEdit(exp)}
+                          className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                          title="Edit expense"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(exp.id)}
+                          className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                          title="Delete expense"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -356,13 +437,42 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
         </div>
       </div>
 
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Delete this expense?</div>
+            <p className="text-xs text-slate-500">
+              This can't be undone. The deletion will be recorded in the audit trail with your name and the exact record removed.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteExpense && confirmDeleteId) onDeleteExpense(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Expense Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in-0 zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">Log New Enterprise Expense</div>
-              <button onClick={() => setShowAddModal(false)} className="text-xs text-slate-400">
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit Expense' : 'Log New Enterprise Expense'}</div>
+              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">
                 ✕
               </button>
             </div>
@@ -461,7 +571,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { resetForm(); setShowAddModal(false); }}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
                 >
                   Cancel
@@ -470,7 +580,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                   type="submit"
                   className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white"
                 >
-                  Save Transaction
+                  {editingId ? 'Save Changes' : 'Save Transaction'}
                 </button>
               </div>
             </form>

@@ -359,17 +359,24 @@ export interface SavingsOpportunity {
   notes?: string;
 }
 
+export interface AuditLogChange {
+  field: string;
+  oldValue: any;
+  newValue: any;
+}
+
 export interface AuditLog {
   id: string;
-  companyId: string;
-  timestamp: string;
+  createdAt: string;
+  userId?: string;
   userName: string;
-  userRole: UserRole;
+  userRole: UserRole | string;
   action: string;
-  entityType: 'EXPENSE' | 'SUBSCRIPTION' | 'ASSET' | 'SAVINGS' | 'BUDGET' | 'PROCUREMENT' | 'SYSTEM' | 'SECURITY';
+  entityType: 'EXPENSE' | 'SUBSCRIPTION' | 'ASSET' | 'SAVINGS' | 'BUDGET' | 'PROCUREMENT' | 'VENDOR' | 'PROPERTY' | 'DEPARTMENT' | 'SYSTEM' | 'SECURITY';
   entityId?: string;
+  entityName?: string;
+  changes?: AuditLogChange[];
   details: string;
-  ipAddress: string;
 }
 
 export interface AIExecutiveReport {

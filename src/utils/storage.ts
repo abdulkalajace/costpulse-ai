@@ -159,14 +159,12 @@ export function getInitialRealProductionData(): EnterpriseAppData {
     auditLogs: [
       {
         id: `log-init-${Date.now()}`,
-        companyId: defaultRealCompany.id,
         userName: defaultAdminUser.name,
         userRole: defaultAdminUser.role,
         action: 'SYSTEM_INITIALIZATION',
         entityType: 'SYSTEM',
         details: 'Initialized clean production ledger for real enterprise data testing.',
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        ipAddress: '127.0.0.1',
+        createdAt: new Date().toISOString(),
       },
     ],
     departments: defaultRealDepartments,

@@ -51,6 +51,34 @@ export const users = pgTable(
   })
 );
 
+// A real, server-owned, insert-only audit trail. Unlike the workspace JSON
+// blob (which a client fully overwrites on every save, so nothing inside it
+// is actually tamper-evident), rows here are written by dedicated endpoints
+// only — a client can create new rows but never edit or delete existing
+// ones, so "who changed what and when" can't be silently rewritten.
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    userId: text("user_id"),
+    userName: text("user_name").notNull(),
+    userRole: text("user_role").notNull(),
+    action: text("action").notNull(), // e.g. CREATE, UPDATE, DELETE, APPROVE, REJECT, SYSTEM
+    entityType: text("entity_type").notNull(), // EXPENSE, ASSET, SUBSCRIPTION, VENDOR, BUDGET, PROCUREMENT, PROPERTY, DEPARTMENT, SYSTEM, SECURITY...
+    entityId: text("entity_id"),
+    entityName: text("entity_name"), // human-readable label, e.g. "AWS Cloud Compute Q3"
+    changes: jsonb("changes"), // [{ field, oldValue, newValue }] — omitted for creates/system events
+    details: text("details").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    accountIdx: index("audit_log_account_id_idx").on(table.accountId),
+  })
+);
+
 // Real, minimal AI usage/cost tracking — one row per Gemini call, written
 // right after the call resolves. Used to power the "AI Usage" panel in
 // Settings so token/cost spend is genuinely visible, not just claimed.
