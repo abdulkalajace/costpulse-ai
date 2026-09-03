@@ -42,7 +42,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   const [dept, setDept] = useState('');
   const [assignedName, setAssignedName] = useState('');
 
-  const types = ['ALL', 'LAPTOP', 'MONITOR', 'PHONE', 'SERVER', 'VEHICLE'];
+  const types = ['ALL', 'LAPTOP', 'DESKTOP', 'MONITOR', 'PHONE', 'SERVER', 'VEHICLE'];
 
   const filteredAssets = assets.filter((a) => {
     if (filterType !== 'ALL' && a.type !== filterType) return false;
@@ -313,6 +313,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
                     className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
                   >
                     <option value="LAPTOP">LAPTOP</option>
+                    <option value="DESKTOP">DESKTOP</option>
                     <option value="MONITOR">MONITOR</option>
                     <option value="PHONE">PHONE</option>
                     <option value="SERVER">SERVER</option>

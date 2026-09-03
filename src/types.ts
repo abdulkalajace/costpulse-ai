@@ -151,7 +151,9 @@ export interface Subscription {
   monthlyCost: number;
   annualCost: number;
   currency: CurrencyCode;
-  billingCycle: 'Monthly' | 'Annual';
+  billingCycle: 'Monthly' | 'Annual' | 'Custom';
+  /** Only set when billingCycle is 'Custom' — how many months the amount paid actually covers (e.g. 1 for a single-month plan). */
+  customCycleMonths?: number;
   renewalDate: string;
   contractEnd: string;
   ownerName: string;
@@ -169,6 +171,7 @@ export interface Subscription {
 
 export type AssetType =
   | 'LAPTOP'
+  | 'DESKTOP'
   | 'SERVER'
   | 'VEHICLE'
   | 'OFFICE_EQUIPMENT'

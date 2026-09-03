@@ -46,7 +46,9 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   const [planName, setPlanName] = useState('Enterprise');
   const [seatsTotal, setSeatsTotal] = useState(50);
   const [seatsUsed, setSeatsUsed] = useState(40);
-  const [annualCost, setAnnualCost] = useState(250000);
+  const [billingCycle, setBillingCycle] = useState<'Monthly' | 'Annual' | 'Custom'>('Annual');
+  const [amountPaid, setAmountPaid] = useState(250000);
+  const [customCycleMonths, setCustomCycleMonths] = useState(1);
   const [category, setCategory] = useState('Productivity & Collaboration');
   const [dept, setDept] = useState('');
   const [renewal, setRenewal] = useState('2026-12-31');
@@ -78,6 +80,13 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   const aiToolSubs = subscriptions.filter((s) => s.category === 'AI Tools & Copilots');
   const aiToolAnnualSpend = aiToolSubs.reduce((acc, s) => acc + s.annualCost, 0);
 
+  // Whatever cycle the user actually pays on, normalize to a monthly and
+  // annual figure so the rest of the app (which reasons in annual terms)
+  // doesn't need to know about billing cycles at all.
+  const cycleMonths = billingCycle === 'Monthly' ? 1 : billingCycle === 'Annual' ? 12 : Math.max(1, Number(customCycleMonths) || 1);
+  const derivedMonthlyCost = Number(amountPaid) / cycleMonths;
+  const derivedAnnualCost = derivedMonthlyCost * 12;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!toolName) return;
@@ -89,8 +98,10 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
       seatsTotal: Number(seatsTotal),
       seatsUsed: Number(seatsUsed),
       seatsUnused: Number(seatsTotal) - Number(seatsUsed),
-      annualCost: Number(annualCost),
-      monthlyCost: Math.round(Number(annualCost) / 12),
+      annualCost: Math.round(derivedAnnualCost),
+      monthlyCost: Math.round(derivedMonthlyCost),
+      billingCycle,
+      customCycleMonths: billingCycle === 'Custom' ? Number(customCycleMonths) : undefined,
       renewalDate: renewal,
       departmentName: dept || 'Unassigned',
       category: category,
@@ -395,16 +406,63 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                 </div>
               </div>
 
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Billing Cycle</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['Monthly', 'Annual', 'Custom'] as const).map((cycle) => (
+                    <button
+                      key={cycle}
+                      type="button"
+                      onClick={() => setBillingCycle(cycle)}
+                      className={`rounded-lg border p-2 text-center font-semibold transition-colors ${
+                        billingCycle === cycle
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      {cycle}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Annual Cost ({currency})</label>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    {billingCycle === 'Monthly' ? `Cost per month (${currency})` : billingCycle === 'Annual' ? `Cost per year (${currency})` : `Amount paid (${currency})`}
+                  </label>
                   <input
                     type="number"
-                    value={annualCost}
-                    onChange={(e) => setAnnualCost(Number(e.target.value))}
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(Number(e.target.value))}
                     className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
                   />
                 </div>
+                {billingCycle === 'Custom' ? (
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Covers how many months?</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={customCycleMonths}
+                      onChange={(e) => setCustomCycleMonths(Number(e.target.value))}
+                      className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">Renewal Date</label>
+                    <input
+                      type="date"
+                      value={renewal}
+                      onChange={(e) => setRenewal(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {billingCycle === 'Custom' && (
                 <div>
                   <label className="block font-medium text-slate-700 mb-1">Renewal Date</label>
                   <input
@@ -414,7 +472,14 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                     className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
                   />
                 </div>
-              </div>
+              )}
+
+              {amountPaid > 0 && (
+                <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-[11px] text-slate-600">
+                  ≈ <span className="font-semibold text-slate-900">{formatCurrency(Math.round(derivedMonthlyCost), currency)}/mo</span>{' '}
+                  · <span className="font-semibold text-slate-900">{formatCurrency(Math.round(derivedAnnualCost), currency)}/yr</span> once annualized
+                </div>
+              )}
 
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Category</label>
