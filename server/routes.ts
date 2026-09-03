@@ -14,8 +14,9 @@ import {
 } from "./auth";
 export const router = Router();
 
-const DEFAULT_AVATAR =
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80";
+// A data: URL avatar upload, base64-encoded, is stored directly in the
+// users.avatar text column — capped well under Postgres's per-row limits.
+const MAX_AVATAR_BASE64_LENGTH = 400_000;
 
 /**
  * Builds a clean, genuinely empty-ledger starter workspace for a brand-new
@@ -127,7 +128,6 @@ router.post("/auth/signup", async (req, res) => {
         name: adminName,
         role: "MD_CEO",
         departmentName: "Executive Management",
-        avatar: DEFAULT_AVATAR,
         lastLoginAt: new Date(),
       })
       .returning();
@@ -191,6 +191,36 @@ router.get("/auth/me", requireAuth, async (req, res) => {
   } catch (error: any) {
     console.error("me error:", error.message);
     res.status(500).json({ success: false, error: "Failed to load session" });
+  }
+});
+
+// Accepts a base64 data: URL (from a client-side-resized image) or null to
+// remove the photo. When absent, the UI falls back to initials — never a
+// stock placeholder image.
+router.patch("/auth/avatar", requireAuth, async (req, res) => {
+  try {
+    const { avatar } = req.body || {};
+    if (avatar !== null && typeof avatar !== "string") {
+      return res.status(400).json({ success: false, error: "avatar must be a string or null" });
+    }
+    if (avatar && !avatar.startsWith("data:image/")) {
+      return res.status(400).json({ success: false, error: "avatar must be an image data URL" });
+    }
+    if (avatar && avatar.length > MAX_AVATAR_BASE64_LENGTH) {
+      return res.status(400).json({ success: false, error: "Image is too large. Please use a smaller photo." });
+    }
+
+    const [user] = await db
+      .update(users)
+      .set({ avatar: avatar || null })
+      .where(eq(users.id, req.session!.userId))
+      .returning();
+    if (!user) return res.status(401).json({ success: false, error: "Session invalid" });
+
+    res.json({ success: true, user: toPublicUser(user) });
+  } catch (error: any) {
+    console.error("update avatar error:", error.message);
+    res.status(500).json({ success: false, error: "Failed to update photo" });
   }
 });
 
@@ -305,7 +335,6 @@ router.post("/team", requireAuth, requireAdmin, async (req, res) => {
         role,
         departmentId: departmentId || null,
         departmentName: departmentName || null,
-        avatar: DEFAULT_AVATAR,
       })
       .returning();
     res.json({ success: true, user: toPublicUser(user) });

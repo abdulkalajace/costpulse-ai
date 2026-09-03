@@ -13,6 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { UserProfile, CurrencyCode, Company } from '../types';
+import { Avatar } from './ui/Avatar';
 
 interface Message {
   id: string;
@@ -174,11 +175,7 @@ export const AiChatAnalyst: React.FC<AiChatAnalystProps> = ({
             </div>
 
             {msg.role === 'user' && (
-              <img
-                src={currentUser.avatar}
-                alt={currentUser.name}
-                className="h-7 w-7 rounded-full object-cover border border-gray-300"
-              />
+              <Avatar name={currentUser.name} src={currentUser.avatar} size="sm" className="border-gray-300" />
             )}
           </div>
         ))}

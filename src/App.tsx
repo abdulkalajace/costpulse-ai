@@ -944,6 +944,7 @@ export function App() {
           isAuthenticated={isAuthenticated}
           onSignOut={handleSignOut}
           onOpenAuthModal={handleOpenPersonaModal}
+          onUpdateUser={setCurrentUser}
         />
       );
     }

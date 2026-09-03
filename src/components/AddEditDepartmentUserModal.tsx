@@ -128,9 +128,7 @@ export const AddEditDepartmentUserModal: React.FC<AddEditDepartmentUserModalProp
       status,
       joinedDate: existingUser?.joinedDate || new Date().toISOString().split('T')[0],
       assignedRulesCount: existingUser?.assignedRulesCount || 3,
-      avatar:
-        existingUser?.avatar ||
-        `https://images.unsplash.com/photo-${1534528741775 + (Math.floor(Math.random() * 500))}?w=150&auto=format&fit=crop&q=80`,
+      avatar: existingUser?.avatar,
       permissions: {
         canApproveExpenses,
         canInitiatePO,

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Company, UserProfile, UserRole, CurrencyCode } from '../types';
 import { formatCurrency } from '../utils/formatters';
+import { Avatar } from './ui/Avatar';
 
 interface NavbarProps {
   companies?: Company[];
@@ -80,7 +81,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     email: 'guest@enterprise.internal',
     role: 'EMPLOYEE' as UserRole,
     departmentName: 'Unauthenticated Session',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   };
 
   const monthlyBurn = activeComp.monthlyBurn || Math.round(activeComp.totalExpensesYear / 12);
@@ -349,11 +349,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onClick={() => setShowRoleMenu(!showRoleMenu)}
                 className="flex items-center gap-1.5 rounded-lg p-1 hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200"
               >
-                <img
-                  src={safeUser.avatar}
-                  alt={safeUser.name}
-                  className="h-7 w-7 rounded-full object-cover border border-gray-200"
-                />
+                <Avatar name={safeUser.name} src={safeUser.avatar} size="sm" />
                 <div className="text-left hidden lg:block">
                   <div className="font-bold text-[#111827] text-xs leading-tight">{safeUser.name}</div>
                   <div className="text-[10px] text-gray-500 font-medium">
@@ -367,11 +363,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="absolute right-0 mt-1.5 w-76 rounded-xl border border-[#E5E7EB] bg-white p-2.5 shadow-xl z-50">
                   {/* Current Active Session Header */}
                   <div className="p-2 mb-2 bg-gray-50 rounded-lg border border-gray-100 flex items-center gap-2.5">
-                    <img
-                      src={safeUser.avatar}
-                      alt={safeUser.name}
-                      className="h-8 w-8 rounded-full object-cover border border-gray-200"
-                    />
+                    <Avatar name={safeUser.name} src={safeUser.avatar} size="md" />
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-bold text-gray-900 truncate">{safeUser.name}</div>
                       <div className="text-[10px] text-gray-500 truncate">{safeUser.email}</div>
@@ -400,11 +392,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             : 'text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        <img
-                          src={u.avatar}
-                          alt={u.name}
-                          className="h-6 w-6 rounded-full object-cover border border-gray-300"
-                        />
+                        <Avatar name={u.name} src={u.avatar} size="xs" />
                         <div className="flex-1 min-w-0">
                           <div className="font-medium truncate text-xs">{u.name}</div>
                           <div className="text-[10px] text-gray-400 truncate">

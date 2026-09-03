@@ -45,6 +45,8 @@ import {
   importRealDataJson,
 } from '../utils/storage';
 import { formatCurrency } from '../utils/formatters';
+import { fileToResizedDataUrl } from '../utils/image';
+import { Avatar } from './ui/Avatar';
 
 interface SettingsViewProps {
   appMode: AppEnvironmentMode;
@@ -61,6 +63,7 @@ interface SettingsViewProps {
   isAuthenticated?: boolean;
   onSignOut?: () => void;
   onOpenAuthModal?: () => void;
+  onUpdateUser?: (user: UserProfile) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -78,12 +81,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   isAuthenticated = true,
   onSignOut,
   onOpenAuthModal,
+  onUpdateUser,
 }) => {
   const [activeTab, setActiveTab] = useState<'ENVIRONMENT_DEMO' | 'COMPANY_PROFILE' | 'POLICIES' | 'INTEGRATIONS' | 'AI_USAGE' | 'ACCOUNT_SECURITY'>('ENVIRONMENT_DEMO');
   const [selectedDemoPreset, setSelectedDemoPreset] = useState<DemoScenarioPreset>('INFRA_CONGLOMERATE');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ title: string; desc: string; type: 'success' | 'info' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+
+  const saveAvatar = async (avatar: string | null) => {
+    setIsUploadingAvatar(true);
+    setAvatarError('');
+    try {
+      const res = await fetch('/api/auth/avatar', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update photo');
+      if (onUpdateUser) onUpdateUser(data.user);
+    } catch (e: any) {
+      setAvatarError(e.message || 'Failed to update photo');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleAvatarFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Please choose an image file');
+      return;
+    }
+    try {
+      const dataUrl = await fileToResizedDataUrl(file, 256);
+      await saveAvatar(dataUrl);
+    } catch (e: any) {
+      setAvatarError(e.message || 'Could not read that image');
+    }
+  };
 
   // Editable Company Form State
   const activeComp = currentData.companies.find((c) => c.id === currentData.selectedCompanyId) || currentData.companies[0];
@@ -1124,23 +1163,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
               <div className="flex items-center gap-4">
-                <div className="relative">
-                  {currentUser?.avatarUrl ? (
-                    <img
-                      src={currentUser.avatarUrl}
-                      alt={currentUser.name}
-                      referrerPolicy="no-referrer"
-                      className="w-14 h-14 rounded-2xl object-cover border border-slate-200 shadow-xs"
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-xs">
-                      {currentUser?.name?.charAt(0) || 'U'}
-                    </div>
-                  )}
+                <div className="relative group">
+                  <Avatar
+                    name={currentUser?.name || 'U'}
+                    src={currentUser?.avatar}
+                    size="xl"
+                    className="rounded-2xl w-14 h-14 text-lg shadow-xs"
+                  />
                   <span
                     className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
                       isAuthenticated ? 'bg-emerald-500' : 'bg-amber-400'
                     }`}
+                  />
+                  {isAuthenticated && (
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      title="Change photo"
+                      className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/50 text-white text-[10px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100 disabled:bg-black/30"
+                    >
+                      {isUploadingAvatar ? '...' : 'Edit'}
+                    </button>
+                  )}
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleAvatarFile(file);
+                      e.target.value = '';
+                    }}
                   />
                 </div>
                 <div>
@@ -1162,6 +1217,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <p className="text-xs text-indigo-600 font-semibold mt-0.5">
                     {currentUser?.role} • {currentUser?.departmentName || 'Enterprise'}
                   </p>
+                  {isAuthenticated && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        disabled={isUploadingAvatar}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                      >
+                        {currentUser?.avatar ? 'Change photo' : 'Add photo'}
+                      </button>
+                      {currentUser?.avatar && (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <button
+                            type="button"
+                            onClick={() => saveAvatar(null)}
+                            disabled={isUploadingAvatar}
+                            className="text-[11px] font-semibold text-slate-400 hover:text-red-600 disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {avatarError && <p className="text-[11px] text-red-600 mt-1">{avatarError}</p>}
                 </div>
               </div>
 

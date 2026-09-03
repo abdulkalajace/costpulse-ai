@@ -28,6 +28,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { Company, UserProfile, UserRole, IndustryVertical } from '../types';
+import { Avatar } from './ui/Avatar';
 
 export type NavTab =
   | 'DASHBOARD'
@@ -104,7 +105,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     email: 'guest@enterprise.internal',
     role: userRole,
     departmentName: 'Public Access',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   };
 
   const parentGroup = companies.find((c) => c.isGroup) || companies[0] || null;
@@ -427,11 +427,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <img
-                src={safeUser.avatar}
-                alt={safeUser.name}
-                className="w-7 h-7 rounded-full object-cover border border-gray-200 shrink-0"
-              />
+              <Avatar name={safeUser.name} src={safeUser.avatar} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-[#111827] truncate">{safeUser.name}</p>
                 <p className="text-[10px] text-gray-400 truncate">{safeUser.role.replace('_', ' ')}</p>

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { Department, DepartmentUser, CurrencyCode, UserRole } from '../types';
 import { buildDepartmentOrgTree, OrgTreeNode } from '../data/hrPayrollSyncEngine';
+import { Avatar } from './ui/Avatar';
 
 interface DepartmentUsersTabProps {
   department: Department;
@@ -325,11 +326,7 @@ export const DepartmentUsersTab: React.FC<DepartmentUsersTabProps> = ({
                   {/* Level 1: Root Department Lead */}
                   <div className="p-4 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={rootNode.user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                        alt={rootNode.user.name}
-                        className="w-11 h-11 rounded-full object-cover border-2 border-purple-300"
-                      />
+                      <Avatar name={rootNode.user.name} src={rootNode.user.avatar} size="lg" className="w-11 h-11 border-2 border-purple-300" />
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-200 text-purple-900">
@@ -370,11 +367,7 @@ export const DepartmentUsersTab: React.FC<DepartmentUsersTabProps> = ({
                           <div className="p-3.5 rounded-xl bg-white border border-blue-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5">
                               <CornerDownRight className="w-4 h-4 text-blue-400 shrink-0" />
-                              <img
-                                src={mgrNode.user.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'}
-                                alt={mgrNode.user.name}
-                                className="w-9 h-9 rounded-full object-cover border border-blue-200"
-                              />
+                              <Avatar name={mgrNode.user.name} src={mgrNode.user.avatar} size="md" className="w-9 h-9 border border-blue-200" />
                               <div>
                                 <div className="flex items-center gap-2">
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
@@ -471,11 +464,7 @@ export const DepartmentUsersTab: React.FC<DepartmentUsersTabProps> = ({
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                       {/* Left info */}
                       <div className="flex items-start gap-3">
-                        <img
-                          src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                          alt={user.name}
-                          className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
-                        />
+                        <Avatar name={user.name} src={user.avatar} size="md" className="w-10 h-10" />
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h5 className="text-xs font-bold text-slate-900">{user.name}</h5>
