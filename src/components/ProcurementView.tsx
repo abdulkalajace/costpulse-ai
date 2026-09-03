@@ -13,6 +13,8 @@ import {
   Calculator,
   Scale,
   Zap,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { ProcurementRequest, CurrencyCode, UserRole, ExpenseCategory, Budget, Subscription, Company } from '../types';
 import { formatCurrency, getStatusBadgeClass } from '../utils/formatters';
@@ -29,9 +31,13 @@ interface ProcurementViewProps {
   onApproveProcurement: (id: string) => void;
   onRejectProcurement: (id: string, reason?: string) => void;
   onNewRequest: (req: Partial<ProcurementRequest>) => void;
+  onUpdateProcurement?: (id: string, updates: Partial<ProcurementRequest>) => void;
+  onDeleteProcurement?: (id: string) => void;
   onInspectCostBurden?: (proc: ProcurementRequest) => void;
   onOpenNegotiation?: (vendorName: string, annualSpend: number, category?: string) => void;
 }
+
+const PENDING_STATUSES = ['SUBMITTED', 'MANAGER_APPROVED', 'DEPT_APPROVED'];
 
 export const ProcurementView: React.FC<ProcurementViewProps> = ({
   procurements,
@@ -45,10 +51,14 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   onApproveProcurement,
   onRejectProcurement,
   onNewRequest,
+  onUpdateProcurement,
+  onDeleteProcurement,
   onInspectCostBurden,
   onOpenNegotiation,
 }) => {
   const [showNewModal, setShowNewModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('Software & SaaS');
@@ -57,38 +67,76 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
   const [urgency, setUrgency] = useState<'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL'>('NORMAL');
   const [dept, setDept] = useState('');
 
+  // Editing/deleting a requisition is only meaningful before it's been
+  // decided — once approved or rejected it's a historical record, not a
+  // draft, so it stays permanent like the rest of the approval trail.
+  const canManage = Boolean(onUpdateProcurement || onDeleteProcurement) && ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
+
   const pendingRequests = procurements.filter(
     (p) => p.status === 'SUBMITTED' || p.status === 'MANAGER_APPROVED' || p.status === 'DEPT_APPROVED'
   );
   const totalPendingValue = pendingRequests.reduce((acc, p) => acc + p.estimatedCost, 0);
 
+  const resetForm = () => {
+    setTitle('');
+    setVendorName('');
+    setCategory('Software & SaaS');
+    setCost('');
+    setJustification('');
+    setUrgency('NORMAL');
+    setDept('');
+    setEditingId(null);
+  };
+
+  const openEdit = (req: ProcurementRequest) => {
+    setTitle(req.title);
+    setVendorName(req.vendorName);
+    setCategory(req.category as ExpenseCategory);
+    setCost(String(req.estimatedCost));
+    setJustification(req.justification);
+    setUrgency(req.urgency);
+    setDept(req.departmentName);
+    setEditingId(req.id);
+    setShowNewModal(true);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !cost) return;
 
-    onNewRequest({
-      title,
-      vendorName,
-      category,
-      estimatedCost: Number(cost),
-      justification,
-      urgency,
-      requestedByName: currentUserName || 'Unknown',
-      departmentName: dept || 'Unassigned',
-      status: 'SUBMITTED',
-      requestDate: new Date().toISOString().split('T')[0],
-      approvalChain: [
-        {
-          step: 'Manager Approval',
-          approverRole: 'MANAGER',
-          status: 'PENDING',
-        },
-      ],
-    });
+    if (editingId && onUpdateProcurement) {
+      onUpdateProcurement(editingId, {
+        title,
+        vendorName,
+        category,
+        estimatedCost: Number(cost),
+        justification,
+        urgency,
+        departmentName: dept || 'Unassigned',
+      });
+    } else {
+      onNewRequest({
+        title,
+        vendorName,
+        category,
+        estimatedCost: Number(cost),
+        justification,
+        urgency,
+        requestedByName: currentUserName || 'Unknown',
+        departmentName: dept || 'Unassigned',
+        status: 'SUBMITTED',
+        requestDate: new Date().toISOString().split('T')[0],
+        approvalChain: [
+          {
+            step: 'Manager Approval',
+            approverRole: 'MANAGER',
+            status: 'PENDING',
+          },
+        ],
+      });
+    }
 
-    setTitle('');
-    setCost('');
-    setJustification('');
+    resetForm();
     setShowNewModal(false);
   };
 
@@ -111,7 +159,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
         </div>
 
         <button
-          onClick={() => setShowNewModal(true)}
+          onClick={() => { resetForm(); setShowNewModal(true); }}
           className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -248,6 +296,24 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                           >
                             Reject
                           </button>
+                          {canManage && (
+                            <>
+                              <button
+                                onClick={() => openEdit(req)}
+                                className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                                title="Edit request"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(req.id)}
+                                className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                                title="Withdraw request"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-1.5">
@@ -271,13 +337,37 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
         </div>
       </div>
 
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Withdraw this request?</div>
+            <p className="text-xs text-slate-500">This can't be undone. Withdrawal is recorded in the audit trail with your name.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteProcurement && confirmDeleteId) onDeleteProcurement(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Withdraw
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* New Request Modal */}
       {showNewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in-0 zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">Submit New Procurement Request</div>
-              <button onClick={() => setShowNewModal(false)} className="text-xs text-slate-400">✕</button>
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit Procurement Request' : 'Submit New Procurement Request'}</div>
+              <button onClick={() => { resetForm(); setShowNewModal(false); }} className="text-xs text-slate-400">✕</button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
@@ -373,7 +463,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowNewModal(false)}
+                  onClick={() => { resetForm(); setShowNewModal(false); }}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
                 >
                   Cancel
@@ -382,7 +472,7 @@ export const ProcurementView: React.FC<ProcurementViewProps> = ({
                   type="submit"
                   className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white"
                 >
-                  Submit Request
+                  {editingId ? 'Save Changes' : 'Submit Request'}
                 </button>
               </div>
             </form>

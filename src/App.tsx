@@ -763,7 +763,103 @@ export function App() {
     };
 
     setProcurements((prev) => [req, ...prev]);
-    logAuditEvent('SUBMITTED_PROCUREMENT_REQUEST', 'PROCUREMENT', `Requisition "${req.title}" submitted (${req.estimatedCost} ${req.currency})`);
+    logAuditEvent('SUBMITTED_PROCUREMENT_REQUEST', 'PROCUREMENT', `Requisition "${req.title}" submitted (${req.estimatedCost} ${req.currency})`, {
+      entityId: req.id,
+      entityName: req.title,
+    });
+  };
+
+  // Handler: Update Procurement Request (only while still pending)
+  const handleUpdateProcurement = (id: string, updates: Partial<ProcurementRequest>) => {
+    setProcurements((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const updated = { ...p, ...updates };
+        const changes = diffFields(p, updated, ['id', 'companyId', 'currency', 'status', 'requestDate']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_PROCUREMENT_REQUEST', 'PROCUREMENT', `Edited requisition "${p.title}"`, {
+            entityId: p.id,
+            entityName: updated.title,
+            changes,
+          });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete/Withdraw Procurement Request
+  const handleDeleteProcurement = (id: string) => {
+    setProcurements((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) {
+        logAuditEvent('WITHDREW_PROCUREMENT_REQUEST', 'PROCUREMENT', `Withdrew requisition "${target.title}" (${target.estimatedCost} ${target.currency})`, {
+          entityId: target.id,
+          entityName: target.title,
+        });
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  // Handler: Add Property
+  const handleAddProperty = (newProp: Partial<PropertyLocation>) => {
+    const prop: PropertyLocation = {
+      id: `prop-${Date.now()}`,
+      companyId: selectedCompany.id,
+      name: newProp.name || 'New Site',
+      type: newProp.type || 'REGIONAL_OFFICE',
+      city: newProp.city || '',
+      address: newProp.address || '',
+      areaSqFt: newProp.areaSqFt || 0,
+      capacitySeats: newProp.capacitySeats || 0,
+      occupancySeats: newProp.occupancySeats || 0,
+      rentAnnual: newProp.rentAnnual || 0,
+      currency: currency,
+      leaseEndDate: newProp.leaseEndDate || '',
+      utilitiesCostAnnual: newProp.utilitiesCostAnnual || 0,
+      maintenanceCostAnnual: newProp.maintenanceCostAnnual || 0,
+      propertyTaxesAnnual: newProp.propertyTaxesAnnual || 0,
+      costPerSqFt: newProp.costPerSqFt || 0,
+      costPerSeat: newProp.costPerSeat || 0,
+      costPerOccupiedSeat: newProp.costPerOccupiedSeat || 0,
+      utilizationRate: newProp.utilizationRate || 0,
+    };
+
+    setProperties((prev) => [prop, ...prev]);
+    logAuditEvent('ADDED_PROPERTY', 'PROPERTY', `Added property "${prop.name}" (${prop.city})`, {
+      entityId: prop.id,
+      entityName: prop.name,
+    });
+  };
+
+  // Handler: Update Property
+  const handleUpdateProperty = (id: string, updates: Partial<PropertyLocation>) => {
+    setProperties((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const updated = { ...p, ...updates };
+        const changes = diffFields(p, updated, ['id', 'companyId', 'currency', 'costPerSqFt', 'costPerSeat', 'costPerOccupiedSeat', 'utilizationRate']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_PROPERTY', 'PROPERTY', `Edited property "${p.name}"`, { entityId: p.id, entityName: updated.name, changes });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete Property
+  const handleDeleteProperty = (id: string) => {
+    setProperties((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) {
+        logAuditEvent('DELETED_PROPERTY', 'PROPERTY', `Deleted property "${target.name}" (${target.city})`, {
+          entityId: target.id,
+          entityName: target.name,
+        });
+      }
+      return prev.filter((p) => p.id !== id);
+    });
   };
 
   // Handler: Direct Approval / Rejection
@@ -1034,6 +1130,10 @@ export function App() {
         <PropertyView
           properties={properties}
           currency={currency}
+          userRole={currentUser.role}
+          onAddProperty={handleAddProperty}
+          onUpdateProperty={handleUpdateProperty}
+          onDeleteProperty={handleDeleteProperty}
           onOpenAlternativeEngine={(item) => setAlternativeTarget(item)}
         />
       );
@@ -1078,6 +1178,8 @@ export function App() {
           onApproveProcurement={handleApproveProcurement}
           onRejectProcurement={handleRejectProcurement}
           onNewRequest={handleAddProcurement}
+          onUpdateProcurement={handleUpdateProcurement}
+          onDeleteProcurement={handleDeleteProcurement}
           onInspectCostBurden={(proc) => {
             setActiveApprovalItem({ item: proc, type: 'PROCUREMENT' });
           }}

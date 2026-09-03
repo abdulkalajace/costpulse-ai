@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Building,
   MapPin,
@@ -9,13 +9,20 @@ import {
   AlertTriangle,
   ArrowRight,
   ShieldCheck,
+  Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
-import { PropertyLocation, CurrencyCode } from '../types';
+import { PropertyLocation, CurrencyCode, UserRole } from '../types';
 import { formatCurrency } from '../utils/formatters';
 
 interface PropertyViewProps {
   properties: PropertyLocation[];
   currency: CurrencyCode;
+  userRole?: UserRole;
+  onAddProperty?: (property: Partial<PropertyLocation>) => void;
+  onUpdateProperty?: (id: string, updates: Partial<PropertyLocation>) => void;
+  onDeleteProperty?: (id: string) => void;
   onOpenAlternativeEngine: (item: {
     itemName: string;
     itemType: string;
@@ -27,8 +34,93 @@ interface PropertyViewProps {
 export const PropertyView: React.FC<PropertyViewProps> = ({
   properties,
   currency,
+  userRole,
+  onAddProperty,
+  onUpdateProperty,
+  onDeleteProperty,
   onOpenAlternativeEngine,
 }) => {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const canManage =
+    Boolean(onAddProperty || onUpdateProperty || onDeleteProperty) &&
+    (!userRole || ['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD'].includes(userRole));
+
+  // Add/Edit form state
+  const [name, setName] = useState('');
+  const [type, setType] = useState<PropertyLocation['type']>('HEADQUARTERS');
+  const [city, setCity] = useState('');
+  const [address, setAddress] = useState('');
+  const [areaSqFt, setAreaSqFt] = useState(5000);
+  const [capacitySeats, setCapacitySeats] = useState(50);
+  const [occupancySeats, setOccupancySeats] = useState(35);
+  const [rentAnnual, setRentAnnual] = useState(1200000);
+  const [leaseEndDate, setLeaseEndDate] = useState('2027-12-31');
+
+  const resetForm = () => {
+    setName('');
+    setType('HEADQUARTERS');
+    setCity('');
+    setAddress('');
+    setAreaSqFt(5000);
+    setCapacitySeats(50);
+    setOccupancySeats(35);
+    setRentAnnual(1200000);
+    setLeaseEndDate('2027-12-31');
+    setEditingId(null);
+  };
+
+  const openEdit = (p: PropertyLocation) => {
+    setName(p.name);
+    setType(p.type);
+    setCity(p.city);
+    setAddress(p.address);
+    setAreaSqFt(p.areaSqFt);
+    setCapacitySeats(p.capacitySeats);
+    setOccupancySeats(p.occupancySeats);
+    setRentAnnual(p.rentAnnual);
+    setLeaseEndDate(p.leaseEndDate);
+    setEditingId(p.id);
+    setShowAddModal(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    const utilizationRate = capacitySeats > 0 ? Math.round((occupancySeats / capacitySeats) * 100) : 0;
+    const costPerSqFt = areaSqFt > 0 ? Math.round(rentAnnual / 12 / areaSqFt) : 0;
+    const costPerSeat = capacitySeats > 0 ? Math.round(rentAnnual / capacitySeats) : 0;
+    const costPerOccupiedSeat = occupancySeats > 0 ? Math.round(rentAnnual / occupancySeats) : costPerSeat;
+
+    const payload: Partial<PropertyLocation> = {
+      name: name.trim(),
+      type,
+      city: city.trim(),
+      address: address.trim(),
+      areaSqFt: Number(areaSqFt),
+      capacitySeats: Number(capacitySeats),
+      occupancySeats: Number(occupancySeats),
+      rentAnnual: Number(rentAnnual),
+      leaseEndDate,
+      utilizationRate,
+      costPerSqFt,
+      costPerSeat,
+      costPerOccupiedSeat,
+    };
+
+    if (editingId && onUpdateProperty) {
+      onUpdateProperty(editingId, payload);
+    } else if (onAddProperty) {
+      onAddProperty(payload);
+    }
+
+    resetForm();
+    setShowAddModal(false);
+  };
+
   const totalRentAnnual = properties.reduce((acc, p) => acc + p.rentAnnual, 0);
   const totalAreaSqFt = properties.reduce((acc, p) => acc + p.areaSqFt, 0);
   const totalSeats = properties.reduce((acc, p) => acc + p.capacitySeats, 0);
@@ -57,6 +149,15 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
             Track office rent, cost per seat, physical badge-swipe utilization, lease expiry, and sublease opportunities.
           </p>
         </div>
+        {canManage && (
+          <button
+            onClick={() => { resetForm(); setShowAddModal(true); }}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>Add Property</span>
+          </button>
+        )}
       </div>
 
       {/* Facilities KPIs */}
@@ -116,6 +217,15 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
           <p className="mt-1.5 max-w-sm text-xs text-slate-500">
             Once you add office and facility locations, you'll see rent, occupancy, and sublease opportunities here.
           </p>
+          {canManage && (
+            <button
+              onClick={() => { resetForm(); setShowAddModal(true); }}
+              className="mt-4 flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add your first property</span>
+            </button>
+          )}
         </div>
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -140,15 +250,35 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
                   </div>
                 </div>
 
-                <span
-                  className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
-                    isUnderutilized
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}
-                >
-                  {prop.utilizationRate}% Utilized
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
+                      isUnderutilized
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {prop.utilizationRate}% Utilized
+                  </span>
+                  {canManage && (
+                    <>
+                      <button
+                        onClick={() => openEdit(prop)}
+                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                        title="Edit property"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(prop.id)}
+                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                        title="Delete property"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {/* Physical Metrics Grid */}
@@ -208,7 +338,7 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
               )}
 
               <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-                <span>Lease Expiry: <strong>{prop.leaseExpiryDate}</strong></span>
+                <span>Lease Expiry: <strong>{prop.leaseEndDate}</strong></span>
                 <button
                   onClick={() =>
                     onOpenAlternativeEngine({
@@ -228,6 +358,163 @@ export const PropertyView: React.FC<PropertyViewProps> = ({
           );
         })}
       </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Remove this property?</div>
+            <p className="text-xs text-slate-500">This can't be undone. Removal is recorded in the audit trail with your name.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteProperty && confirmDeleteId) onDeleteProperty(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Property Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in-0 zoom-in-95">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit Property' : 'Add Property / Facility'}</div>
+              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Site Name</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Bengaluru HQ - Floor 4"
+                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Type</label>
+                  <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as PropertyLocation['type'])}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  >
+                    <option value="HEADQUARTERS">Headquarters</option>
+                    <option value="REGIONAL_OFFICE">Regional Office</option>
+                    <option value="WAREHOUSE">Warehouse</option>
+                    <option value="R&D_FACILITY">R&D Facility</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">City</label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g. Bengaluru"
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Address</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="e.g. 4th Floor, Prestige Tech Park"
+                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Area (sqft)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={areaSqFt}
+                    onChange={(e) => setAreaSqFt(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Annual Rent ({currency})</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={rentAnnual}
+                    onChange={(e) => setRentAnnual(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Seat Capacity</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={capacitySeats}
+                    onChange={(e) => setCapacitySeats(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-700 mb-1">Occupied Seats</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={occupancySeats}
+                    onChange={(e) => setOccupancySeats(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-700 mb-1">Lease End Date</label>
+                <input
+                  type="date"
+                  value={leaseEndDate}
+                  onChange={(e) => setLeaseEndDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setShowAddModal(false); }}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white">
+                  {editingId ? 'Save Changes' : 'Save Property'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
