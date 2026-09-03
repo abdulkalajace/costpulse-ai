@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Users,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { Subscription, CurrencyCode, UserRole } from '../types';
 import { formatCurrency, getStatusBadgeClass, getUpcomingRenewals, daysUntil } from '../utils/formatters';
@@ -20,6 +22,8 @@ interface SubscriptionsViewProps {
   userRole: UserRole;
   departments?: { name: string }[];
   onAddSubscription: (sub: Partial<Subscription>) => void;
+  onUpdateSubscription?: (id: string, updates: Partial<Subscription>) => void;
+  onDeleteSubscription?: (id: string) => void;
   onOpenAlternativeEngine: (item: {
     itemName: string;
     itemType: string;
@@ -34,11 +38,17 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   userRole,
   departments = [],
   onAddSubscription,
+  onUpdateSubscription,
+  onDeleteSubscription,
   onOpenAlternativeEngine,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const canManage = Boolean(onUpdateSubscription || onDeleteSubscription) && ['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
 
   // Form state
   const [toolName, setToolName] = useState('');
@@ -87,30 +97,79 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   const derivedMonthlyCost = Number(amountPaid) / cycleMonths;
   const derivedAnnualCost = derivedMonthlyCost * 12;
 
+  const resetForm = () => {
+    setToolName('');
+    setVendorName('');
+    setPlanName('Enterprise');
+    setSeatsTotal(50);
+    setSeatsUsed(40);
+    setBillingCycle('Annual');
+    setAmountPaid(250000);
+    setCustomCycleMonths(1);
+    setCategory('Productivity & Collaboration');
+    setDept('');
+    setRenewal('2026-12-31');
+    setEditingId(null);
+  };
+
+  const openEdit = (sub: Subscription) => {
+    setToolName(sub.softwareName);
+    setVendorName(sub.vendorName);
+    setPlanName(sub.planName);
+    setSeatsTotal(sub.seatsTotal);
+    setSeatsUsed(sub.seatsUsed);
+    setBillingCycle(sub.billingCycle === 'Custom' ? 'Custom' : sub.billingCycle);
+    setAmountPaid(sub.billingCycle === 'Monthly' ? sub.monthlyCost : sub.billingCycle === 'Custom' ? sub.monthlyCost * (sub.customCycleMonths || 1) : sub.annualCost);
+    setCustomCycleMonths(sub.customCycleMonths || 1);
+    setCategory(sub.category);
+    setDept(sub.departmentName);
+    setRenewal(sub.renewalDate);
+    setEditingId(sub.id);
+    setShowAddModal(true);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!toolName) return;
 
-    onAddSubscription({
-      softwareName: toolName,
-      vendorName: vendorName || toolName,
-      planName: planName,
-      seatsTotal: Number(seatsTotal),
-      seatsUsed: Number(seatsUsed),
-      seatsUnused: Number(seatsTotal) - Number(seatsUsed),
-      annualCost: Math.round(derivedAnnualCost),
-      monthlyCost: Math.round(derivedMonthlyCost),
-      billingCycle,
-      customCycleMonths: billingCycle === 'Custom' ? Number(customCycleMonths) : undefined,
-      renewalDate: renewal,
-      departmentName: dept || 'Unassigned',
-      category: category,
-      status: Number(seatsUsed) < Number(seatsTotal) * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
-      currency: 'INR',
-    });
+    if (editingId && onUpdateSubscription) {
+      onUpdateSubscription(editingId, {
+        softwareName: toolName,
+        vendorName: vendorName || toolName,
+        planName: planName,
+        seatsTotal: Number(seatsTotal),
+        seatsUsed: Number(seatsUsed),
+        seatsUnused: Number(seatsTotal) - Number(seatsUsed),
+        annualCost: Math.round(derivedAnnualCost),
+        monthlyCost: Math.round(derivedMonthlyCost),
+        billingCycle,
+        customCycleMonths: billingCycle === 'Custom' ? Number(customCycleMonths) : undefined,
+        renewalDate: renewal,
+        departmentName: dept || 'Unassigned',
+        category: category,
+        status: Number(seatsUsed) < Number(seatsTotal) * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
+      });
+    } else {
+      onAddSubscription({
+        softwareName: toolName,
+        vendorName: vendorName || toolName,
+        planName: planName,
+        seatsTotal: Number(seatsTotal),
+        seatsUsed: Number(seatsUsed),
+        seatsUnused: Number(seatsTotal) - Number(seatsUsed),
+        annualCost: Math.round(derivedAnnualCost),
+        monthlyCost: Math.round(derivedMonthlyCost),
+        billingCycle,
+        customCycleMonths: billingCycle === 'Custom' ? Number(customCycleMonths) : undefined,
+        renewalDate: renewal,
+        departmentName: dept || 'Unassigned',
+        category: category,
+        status: Number(seatsUsed) < Number(seatsTotal) * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
+        currency: 'INR',
+      });
+    }
 
-    setToolName('');
-    setVendorName('');
+    resetForm();
     setShowAddModal(false);
   };
 
@@ -133,7 +192,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { resetForm(); setShowAddModal(true); }}
           className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -275,16 +334,17 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                 <th className="py-3 px-4 font-semibold">Status</th>
                 <th className="py-3 px-4 font-semibold">AI Intelligence Alert</th>
                 <th className="py-3 px-4 font-semibold text-right">Action</th>
+                {canManage && <th className="py-3 px-4 font-semibold text-right">Manage</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredSubs.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-xs text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-xs text-slate-500">
                     {subscriptions.length === 0 ? (
                       <>
                         No subscriptions tracked yet.{' '}
-                        <button onClick={() => setShowAddModal(true)} className="font-semibold text-blue-600 hover:text-blue-700">
+                        <button onClick={() => { resetForm(); setShowAddModal(true); }} className="font-semibold text-blue-600 hover:text-blue-700">
                           Add your first subscription
                         </button>
                       </>
@@ -355,6 +415,26 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                         Compare
                       </button>
                     </td>
+                    {canManage && (
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openEdit(sub)}
+                            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                            title="Edit subscription"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(sub.id)}
+                            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                            title="Delete subscription"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -363,13 +443,37 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
         </div>
       </div>
 
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Remove this subscription?</div>
+            <p className="text-xs text-slate-500">This can't be undone. Removal is recorded in the audit trail with your name.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteSubscription && confirmDeleteId) onDeleteSubscription(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Subscription Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in-0 zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">Add New SaaS Subscription</div>
-              <button onClick={() => setShowAddModal(false)} className="text-xs text-slate-400">✕</button>
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit SaaS Subscription' : 'Add New SaaS Subscription'}</div>
+              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">✕</button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
@@ -527,7 +631,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { resetForm(); setShowAddModal(false); }}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
                 >
                   Cancel
@@ -536,7 +640,7 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
                   type="submit"
                   className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white"
                 >
-                  Save Subscription
+                  {editingId ? 'Save Changes' : 'Save Subscription'}
                 </button>
               </div>
             </form>

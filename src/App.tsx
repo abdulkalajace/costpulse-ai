@@ -531,7 +531,43 @@ export function App() {
     };
 
     setSubscriptions((prev) => [sub, ...prev]);
-    logAuditEvent('REGISTERED_SUBSCRIPTION', 'SUBSCRIPTION', `Registered SaaS license "${sub.softwareName}" (${sub.annualCost} ${sub.currency}/yr)`);
+    logAuditEvent('REGISTERED_SUBSCRIPTION', 'SUBSCRIPTION', `Registered SaaS license "${sub.softwareName}" (${sub.annualCost} ${sub.currency}/yr)`, {
+      entityId: sub.id,
+      entityName: sub.softwareName,
+    });
+  };
+
+  // Handler: Update Subscription
+  const handleUpdateSubscription = (id: string, updates: Partial<Subscription>) => {
+    setSubscriptions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const updated = { ...s, ...updates };
+        const changes = diffFields(s, updated, ['id', 'companyId', 'currency', 'contractEnd', 'usageRate']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_SUBSCRIPTION', 'SUBSCRIPTION', `Edited subscription "${s.softwareName}"`, {
+            entityId: s.id,
+            entityName: updated.softwareName,
+            changes,
+          });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete Subscription
+  const handleDeleteSubscription = (id: string) => {
+    setSubscriptions((prev) => {
+      const target = prev.find((s) => s.id === id);
+      if (target) {
+        logAuditEvent('DELETED_SUBSCRIPTION', 'SUBSCRIPTION', `Deleted subscription "${target.softwareName}"`, {
+          entityId: target.id,
+          entityName: target.softwareName,
+        });
+      }
+      return prev.filter((s) => s.id !== id);
+    });
   };
 
   // Handler: Add Asset
@@ -557,7 +593,39 @@ export function App() {
     };
 
     setAssets((prev) => [ast, ...prev]);
-    logAuditEvent('REGISTERED_ASSET', 'ASSET', `Registered hardware asset "${ast.name}" (${ast.serialNumber})`);
+    logAuditEvent('REGISTERED_ASSET', 'ASSET', `Registered hardware asset "${ast.name}" (${ast.serialNumber})`, {
+      entityId: ast.id,
+      entityName: ast.name,
+    });
+  };
+
+  // Handler: Update Asset
+  const handleUpdateAsset = (id: string, updates: Partial<Asset>) => {
+    setAssets((prev) =>
+      prev.map((a) => {
+        if (a.id !== id) return a;
+        const updated = { ...a, ...updates };
+        const changes = diffFields(a, updated, ['id', 'companyId', 'currentValue', 'utilizationScore', 'maintenanceCostYearly', 'insuranceCostYearly', 'depreciationRateYearly']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_ASSET', 'ASSET', `Edited asset "${a.name}"`, { entityId: a.id, entityName: updated.name, changes });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete Asset
+  const handleDeleteAsset = (id: string) => {
+    setAssets((prev) => {
+      const target = prev.find((a) => a.id === id);
+      if (target) {
+        logAuditEvent('DELETED_ASSET', 'ASSET', `Deleted asset "${target.name}" (${target.serialNumber})`, {
+          entityId: target.id,
+          entityName: target.name,
+        });
+      }
+      return prev.filter((a) => a.id !== id);
+    });
   };
 
   // Handler: Add Vendor
@@ -580,7 +648,36 @@ export function App() {
     };
 
     setVendors((prev) => [vendor, ...prev]);
-    logAuditEvent('REGISTERED_VENDOR', 'SYSTEM', `Added vendor "${vendor.name}" (${vendor.category})`);
+    logAuditEvent('REGISTERED_VENDOR', 'VENDOR', `Added vendor "${vendor.name}" (${vendor.category})`, {
+      entityId: vendor.id,
+      entityName: vendor.name,
+    });
+  };
+
+  // Handler: Update Vendor
+  const handleUpdateVendor = (id: string, updates: Partial<Vendor>) => {
+    setVendors((prev) =>
+      prev.map((v) => {
+        if (v.id !== id) return v;
+        const updated = { ...v, ...updates };
+        const changes = diffFields(v, updated, ['id', 'companyId']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_VENDOR', 'VENDOR', `Edited vendor "${v.name}"`, { entityId: v.id, entityName: updated.name, changes });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete Vendor
+  const handleDeleteVendor = (id: string) => {
+    setVendors((prev) => {
+      const target = prev.find((v) => v.id === id);
+      if (target) {
+        logAuditEvent('DELETED_VENDOR', 'VENDOR', `Deleted vendor "${target.name}"`, { entityId: target.id, entityName: target.name });
+      }
+      return prev.filter((v) => v.id !== id);
+    });
   };
 
   // Handler: Add Budget
@@ -601,7 +698,43 @@ export function App() {
     };
 
     setBudgets((prev) => [budget, ...prev]);
-    logAuditEvent('CREATED_BUDGET', 'BUDGET', `Created budget for "${budget.departmentName}" (${budget.fiscalQuarter})`);
+    logAuditEvent('CREATED_BUDGET', 'BUDGET', `Created budget for "${budget.departmentName}" (${budget.fiscalQuarter})`, {
+      entityId: budget.id,
+      entityName: `${budget.departmentName} — ${budget.fiscalQuarter}`,
+    });
+  };
+
+  // Handler: Update Budget
+  const handleUpdateBudget = (id: string, updates: Partial<Budget>) => {
+    setBudgets((prev) =>
+      prev.map((b) => {
+        if (b.id !== id) return b;
+        const updated = { ...b, ...updates };
+        const changes = diffFields(b, updated, ['id', 'companyId', 'currency']);
+        if (changes.length > 0) {
+          logAuditEvent('UPDATED_BUDGET', 'BUDGET', `Edited budget for "${b.departmentName}"`, {
+            entityId: b.id,
+            entityName: `${updated.departmentName} — ${updated.fiscalQuarter}`,
+            changes,
+          });
+        }
+        return updated;
+      })
+    );
+  };
+
+  // Handler: Delete Budget
+  const handleDeleteBudget = (id: string) => {
+    setBudgets((prev) => {
+      const target = prev.find((b) => b.id === id);
+      if (target) {
+        logAuditEvent('DELETED_BUDGET', 'BUDGET', `Deleted budget for "${target.departmentName}" (${target.fiscalQuarter})`, {
+          entityId: target.id,
+          entityName: `${target.departmentName} — ${target.fiscalQuarter}`,
+        });
+      }
+      return prev.filter((b) => b.id !== id);
+    });
   };
 
   // Handler: Add Procurement Request
@@ -875,6 +1008,8 @@ export function App() {
           userRole={currentUser.role}
           departments={departments}
           onAddSubscription={handleAddSubscription}
+          onUpdateSubscription={handleUpdateSubscription}
+          onDeleteSubscription={handleDeleteSubscription}
           onOpenAlternativeEngine={(item) => setAlternativeTarget(item)}
         />
       );
@@ -888,6 +1023,8 @@ export function App() {
           userRole={currentUser.role}
           departments={departments}
           onAddAsset={handleAddAsset}
+          onUpdateAsset={handleUpdateAsset}
+          onDeleteAsset={handleDeleteAsset}
         />
       );
     }
@@ -920,6 +1057,8 @@ export function App() {
           currency={currency}
           userRole={currentUser.role}
           onAddVendor={handleAddVendor}
+          onUpdateVendor={handleUpdateVendor}
+          onDeleteVendor={handleDeleteVendor}
           onOpenAlternativeEngine={(item) => setAlternativeTarget(item)}
         />
       );
@@ -954,7 +1093,10 @@ export function App() {
         <BudgetsView
           budgets={budgets}
           currency={currency}
+          userRole={currentUser.role}
           onAddBudget={handleAddBudget}
+          onUpdateBudget={handleUpdateBudget}
+          onDeleteBudget={handleDeleteBudget}
           onOpenSimulator={() => {
             setCurrentTab('SAVINGS_CENTER');
           }}

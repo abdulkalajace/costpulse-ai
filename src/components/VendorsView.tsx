@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Store, Search, Plus } from 'lucide-react';
+import { Store, Search, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Vendor, CurrencyCode, UserRole } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { EmptyState } from './ui/EmptyState';
@@ -9,6 +9,8 @@ interface VendorsViewProps {
   currency: CurrencyCode;
   userRole: UserRole;
   onAddVendor: (vendor: Partial<Vendor>) => void;
+  onUpdateVendor?: (id: string, updates: Partial<Vendor>) => void;
+  onDeleteVendor?: (id: string) => void;
   onOpenAlternativeEngine: (item: {
     itemName: string;
     itemType: string;
@@ -22,11 +24,17 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
   currency,
   userRole,
   onAddVendor,
+  onUpdateVendor,
+  onDeleteVendor,
   onOpenAlternativeEngine,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDept, setFilterDept] = useState('ALL');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const canManage = Boolean(onUpdateVendor || onDeleteVendor) && ['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
 
   // Add Vendor form state
   const [name, setName] = useState('');
@@ -58,21 +66,50 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
   const topIncrease = [...priceIncreaseVendors].sort((a, b) => b.priceChangePercent12m - a.priceChangePercent12m)[0];
   const contractsWithRenewal = vendors.filter((v) => v.contractRenewalDate);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    onAddVendor({
-      name: name.trim(),
-      category: category.trim() || 'Uncategorized',
-      departmentName: departmentName.trim() || 'Unassigned',
-      totalSpendAnnual: Number(totalSpendAnnual) || 0,
-      monthlySpendAverage: Math.round((Number(totalSpendAnnual) || 0) / 12),
-      paymentTerms,
-    });
+  const resetForm = () => {
     setName('');
     setCategory('');
     setDepartmentName('');
     setTotalSpendAnnual(0);
+    setPaymentTerms('NET30');
+    setEditingId(null);
+  };
+
+  const openEdit = (v: Vendor) => {
+    setName(v.name);
+    setCategory(v.category);
+    setDepartmentName(v.departmentName);
+    setTotalSpendAnnual(v.totalSpendAnnual);
+    setPaymentTerms(v.paymentTerms);
+    setEditingId(v.id);
+    setShowAddModal(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    if (editingId && onUpdateVendor) {
+      onUpdateVendor(editingId, {
+        name: name.trim(),
+        category: category.trim() || 'Uncategorized',
+        departmentName: departmentName.trim() || 'Unassigned',
+        totalSpendAnnual: Number(totalSpendAnnual) || 0,
+        monthlySpendAverage: Math.round((Number(totalSpendAnnual) || 0) / 12),
+        paymentTerms,
+      });
+    } else {
+      onAddVendor({
+        name: name.trim(),
+        category: category.trim() || 'Uncategorized',
+        departmentName: departmentName.trim() || 'Unassigned',
+        totalSpendAnnual: Number(totalSpendAnnual) || 0,
+        monthlySpendAverage: Math.round((Number(totalSpendAnnual) || 0) / 12),
+        paymentTerms,
+      });
+    }
+
+    resetForm();
     setShowAddModal(false);
   };
 
@@ -95,7 +132,7 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { resetForm(); setShowAddModal(true); }}
           className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -110,7 +147,7 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
           description="Add your suppliers to track spend concentration, contract renewals, and price changes over time."
           action={
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => { resetForm(); setShowAddModal(true); }}
               className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -207,6 +244,7 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
                     <th className="py-3 px-4 font-semibold">Contract Renewal</th>
                     <th className="py-3 px-4 font-semibold">Payment Terms</th>
                     <th className="py-3 px-4 font-semibold text-right">Negotiate</th>
+                    {canManage && <th className="py-3 px-4 font-semibold text-right">Manage</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -254,6 +292,26 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
                           Negotiate / Replace
                         </button>
                       </td>
+                      {canManage && (
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => openEdit(v)}
+                              className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                              title="Edit vendor"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(v.id)}
+                              className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                              title="Delete vendor"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -263,13 +321,37 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
         </>
       )}
 
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Remove this vendor?</div>
+            <p className="text-xs text-slate-500">This can't be undone. Removal is recorded in the audit trail with your name.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteVendor && confirmDeleteId) onDeleteVendor(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Vendor Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">Add Vendor</div>
-              <button onClick={() => setShowAddModal(false)} className="text-xs text-slate-400">✕</button>
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit Vendor' : 'Add Vendor'}</div>
+              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">✕</button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
@@ -338,13 +420,13 @@ export const VendorsView: React.FC<VendorsViewProps> = ({
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { resetForm(); setShowAddModal(false); }}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
                 >
                   Cancel
                 </button>
                 <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white">
-                  Save Vendor
+                  {editingId ? 'Save Changes' : 'Save Vendor'}
                 </button>
               </div>
             </form>

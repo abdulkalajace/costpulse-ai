@@ -1,19 +1,28 @@
 import React, { useState } from 'react';
-import { PieChart, Sliders, Plus } from 'lucide-react';
-import { Budget, CurrencyCode, ExpenseCategory } from '../types';
+import { PieChart, Sliders, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Budget, CurrencyCode, ExpenseCategory, UserRole } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { EmptyState } from './ui/EmptyState';
 
 interface BudgetsViewProps {
   budgets: Budget[];
   currency: CurrencyCode;
+  userRole?: UserRole;
   onAddBudget: (budget: Partial<Budget>) => void;
+  onUpdateBudget?: (id: string, updates: Partial<Budget>) => void;
+  onDeleteBudget?: (id: string) => void;
   onOpenSimulator?: () => void;
 }
 
-export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onAddBudget, onOpenSimulator }) => {
+export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, userRole, onAddBudget, onUpdateBudget, onDeleteBudget, onOpenSimulator }) => {
   const [filterRisk, setFilterRisk] = useState<'ALL' | 'OVER' | 'WARNING' | 'HEALTHY'>('ALL');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const canManage =
+    Boolean(onUpdateBudget || onDeleteBudget) &&
+    (!userRole || ['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD', 'MANAGER'].includes(userRole));
 
   // Add Budget form state
   const [departmentName, setDepartmentName] = useState('');
@@ -40,22 +49,55 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
     return p >= 0.8 && p < 1;
   }).length;
 
+  const resetForm = () => {
+    setDepartmentName('');
+    setCategory('Software & SaaS');
+    setFiscalQuarter('Q1 FY26');
+    setAllocatedAmount(0);
+    setEditingId(null);
+  };
+
+  const openEdit = (b: Budget) => {
+    setDepartmentName(b.departmentName);
+    setCategory(b.category as ExpenseCategory);
+    setFiscalQuarter(b.fiscalQuarter);
+    setAllocatedAmount(b.allocatedAmount);
+    setEditingId(b.id);
+    setShowAddModal(true);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!departmentName.trim() || !allocatedAmount) return;
-    onAddBudget({
-      departmentName: departmentName.trim(),
-      category,
-      fiscalQuarter,
-      allocatedAmount: Number(allocatedAmount),
-      spentAmount: 0,
-      forecastAmount: Number(allocatedAmount),
-      varianceAmount: Number(allocatedAmount),
-      variancePercent: 0,
-      status: 'ON_TRACK',
-    });
-    setDepartmentName('');
-    setAllocatedAmount(0);
+
+    if (editingId && onUpdateBudget) {
+      const existing = budgets.find((b) => b.id === editingId);
+      const newAllocated = Number(allocatedAmount);
+      const spent = existing?.spentAmount || 0;
+      onUpdateBudget(editingId, {
+        departmentName: departmentName.trim(),
+        category,
+        fiscalQuarter,
+        allocatedAmount: newAllocated,
+        varianceAmount: newAllocated - spent,
+        variancePercent: newAllocated > 0 ? Math.round(((newAllocated - spent) / newAllocated) * 100) : 0,
+        status: spent >= newAllocated ? 'OVER_BUDGET' : 'ON_TRACK',
+      });
+    } else {
+      onAddBudget({
+        departmentName: departmentName.trim(),
+        category,
+        fiscalQuarter,
+        allocatedAmount: Number(allocatedAmount),
+        spentAmount: 0,
+        forecastAmount: Number(allocatedAmount),
+        varianceAmount: Number(allocatedAmount),
+        variancePercent: 0,
+        status: 'ON_TRACK',
+      });
+    }
+
+    resetForm();
     setShowAddModal(false);
   };
 
@@ -79,7 +121,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { resetForm(); setShowAddModal(true); }}
             className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-xs"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -104,7 +146,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
           description="Allocate a fiscal budget per department to track spend against a cap and catch overspending early."
           action={
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => { resetForm(); setShowAddModal(true); }}
               className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -230,17 +272,37 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
                   <div className="text-[11px] text-slate-500">{b.category} • {b.fiscalQuarter}</div>
                 </div>
 
-                <span
-                  className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${
-                    isOver
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : isWarn
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
-                >
-                  {isOver ? 'OVER BUDGET' : isWarn ? 'WARNING (>80%)' : 'ON TRACK'}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                      isOver
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : isWarn
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}
+                  >
+                    {isOver ? 'OVER BUDGET' : isWarn ? 'WARNING (>80%)' : 'ON TRACK'}
+                  </span>
+                  {canManage && (
+                    <>
+                      <button
+                        onClick={() => openEdit(b)}
+                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                        title="Edit budget"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(b.id)}
+                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                        title="Delete budget"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {/* Progress Bar with Headroom */}
@@ -276,13 +338,37 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
       </>
       )}
 
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Remove this budget?</div>
+            <p className="text-xs text-slate-500">This can't be undone. Removal is recorded in the audit trail with your name.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteBudget && confirmDeleteId) onDeleteBudget(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Budget Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">Add Budget</div>
-              <button onClick={() => setShowAddModal(false)} className="text-xs text-slate-400">✕</button>
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit Budget' : 'Add Budget'}</div>
+              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">✕</button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
@@ -347,13 +433,13 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ budgets, currency, onA
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { resetForm(); setShowAddModal(false); }}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
                 >
                   Cancel
                 </button>
                 <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white">
-                  Save Budget
+                  {editingId ? 'Save Changes' : 'Save Budget'}
                 </button>
               </div>
             </form>

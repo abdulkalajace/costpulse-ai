@@ -9,6 +9,8 @@ import {
   Car,
   RotateCw,
   HardDrive,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { Asset, CurrencyCode, UserRole, AssetType, AssetStatus } from '../types';
 import { formatCurrency, getStatusBadgeClass } from '../utils/formatters';
@@ -19,6 +21,8 @@ interface AssetsViewProps {
   userRole: UserRole;
   departments?: { name: string }[];
   onAddAsset: (asset: Partial<Asset>) => void;
+  onUpdateAsset?: (id: string, updates: Partial<Asset>) => void;
+  onDeleteAsset?: (id: string) => void;
 }
 
 export const AssetsView: React.FC<AssetsViewProps> = ({
@@ -27,11 +31,17 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   userRole,
   departments = [],
   onAddAsset,
+  onUpdateAsset,
+  onDeleteAsset,
 }) => {
   const [filterType, setFilterType] = useState('ALL');
   const [filterIdle, setFilterIdle] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const canManage = Boolean(onUpdateAsset || onDeleteAsset) && ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
 
   // Form states
   const [name, setName] = useState('');
@@ -62,30 +72,65 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
   const totalAssetValue = assets.reduce((acc, a) => acc + a.purchasePrice, 0);
   const idleAssetsCount = assets.filter((a) => a.status === 'IDLE').length;
 
+  const resetForm = () => {
+    setName('');
+    setType('LAPTOP');
+    setSerial('');
+    setPrice(150000);
+    setLocation('');
+    setDept('');
+    setAssignedName('');
+    setEditingId(null);
+  };
+
+  const openEdit = (asset: Asset) => {
+    setName(asset.name);
+    setType(asset.type);
+    setSerial(asset.serialNumber);
+    setPrice(asset.purchasePrice);
+    setLocation(asset.location);
+    setDept(asset.departmentName);
+    setAssignedName(asset.assignedToName || '');
+    setEditingId(asset.id);
+    setShowAddModal(true);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
 
-    onAddAsset({
-      name,
-      type,
-      serialNumber: serial || `SN-${Math.floor(100000 + Math.random() * 900000)}`,
-      purchasePrice: Number(price),
-      currentValue: Math.round(Number(price) * 0.8),
-      currency,
-      purchaseDate: new Date().toISOString().split('T')[0],
-      assignedToName: assignedName || undefined,
-      departmentName: dept || 'Unassigned',
-      status: (assignedName ? 'ACTIVE' : 'IDLE') as AssetStatus,
-      location: location,
-      utilizationScore: assignedName ? 85 : 0,
-      maintenanceCostYearly: Math.round(Number(price) * 0.05),
-      insuranceCostYearly: Math.round(Number(price) * 0.02),
-      depreciationRateYearly: 20,
-    });
+    if (editingId && onUpdateAsset) {
+      onUpdateAsset(editingId, {
+        name,
+        type,
+        serialNumber: serial,
+        purchasePrice: Number(price),
+        location,
+        departmentName: dept || 'Unassigned',
+        assignedToName: assignedName || undefined,
+        status: (assignedName ? 'ACTIVE' : 'IDLE') as AssetStatus,
+      });
+    } else {
+      onAddAsset({
+        name,
+        type,
+        serialNumber: serial || `SN-${Math.floor(100000 + Math.random() * 900000)}`,
+        purchasePrice: Number(price),
+        currentValue: Math.round(Number(price) * 0.8),
+        currency,
+        purchaseDate: new Date().toISOString().split('T')[0],
+        assignedToName: assignedName || undefined,
+        departmentName: dept || 'Unassigned',
+        status: (assignedName ? 'ACTIVE' : 'IDLE') as AssetStatus,
+        location: location,
+        utilizationScore: assignedName ? 85 : 0,
+        maintenanceCostYearly: Math.round(Number(price) * 0.05),
+        insuranceCostYearly: Math.round(Number(price) * 0.02),
+        depreciationRateYearly: 20,
+      });
+    }
 
-    setName('');
-    setSerial('');
+    resetForm();
     setShowAddModal(false);
   };
 
@@ -108,7 +153,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { resetForm(); setShowAddModal(true); }}
           className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -211,16 +256,17 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
                 <th className="py-3 px-4 font-semibold">Book Value</th>
                 <th className="py-3 px-4 font-semibold">Status</th>
                 <th className="py-3 px-4 font-semibold">Utilization</th>
+                {canManage && <th className="py-3 px-4 font-semibold text-right">Manage</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAssets.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-xs text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-xs text-slate-500">
                     {assets.length === 0 ? (
                       <>
                         No assets registered yet.{' '}
-                        <button onClick={() => setShowAddModal(true)} className="font-semibold text-blue-600 hover:text-blue-700">
+                        <button onClick={() => { resetForm(); setShowAddModal(true); }} className="font-semibold text-blue-600 hover:text-blue-700">
                           Register your first asset
                         </button>
                       </>
@@ -275,6 +321,26 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
                       </div>
                     </div>
                   </td>
+                  {canManage && (
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openEdit(asset)}
+                          className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
+                          title="Edit asset"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(asset.id)}
+                          className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
+                          title="Delete asset"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -282,13 +348,42 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
         </div>
       </div>
 
+      {/* Delete Confirm Modal */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="font-bold text-slate-900 text-sm">Remove this asset?</div>
+            <p className="text-xs text-slate-500">
+              This can't be undone. Removal is recorded in the audit trail with your name.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (onDeleteAsset && confirmDeleteId) onDeleteAsset(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Asset Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in-0 zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">Register Physical/Digital Asset</div>
-              <button onClick={() => setShowAddModal(false)} className="text-xs text-slate-400">✕</button>
+              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit Asset' : 'Register Physical/Digital Asset'}</div>
+              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">✕</button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
@@ -384,7 +479,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => { resetForm(); setShowAddModal(false); }}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
                 >
                   Cancel
@@ -393,7 +488,7 @@ export const AssetsView: React.FC<AssetsViewProps> = ({
                   type="submit"
                   className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white"
                 >
-                  Save Asset
+                  {editingId ? 'Save Changes' : 'Save Asset'}
                 </button>
               </div>
             </form>
