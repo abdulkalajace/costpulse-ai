@@ -8,27 +8,19 @@ import {
   Bot,
   FileText,
   Zap,
-  CheckCircle2,
-  ShieldCheck,
   ChevronDown,
   ChevronRight,
   Building2,
-  Building,
-  Sliders,
-  DollarSign,
-  Activity,
   Settings,
-  Database,
-  Sparkles,
   LogOut,
   LogIn,
-  KeyRound,
-  Laptop,
-  PieChart,
-  ClipboardList,
 } from 'lucide-react';
-import { Company, UserProfile, UserRole, IndustryVertical } from '../types';
-import { Avatar } from './ui/Avatar';
+import { Company, UserProfile, UserRole } from '../types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
 export type NavTab =
   | 'DASHBOARD'
@@ -63,7 +55,6 @@ interface SidebarProps {
   potentialSavingsCount?: number;
   pendingApprovalsCount?: number;
   anomaliesCount?: number;
-  renewalsSoonCount?: number;
   companies?: Company[];
   selectedCompany?: Company;
   onSelectCompany?: (company: Company) => void;
@@ -79,11 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSignOut,
   onSignIn,
   appMode = 'PRODUCTION',
-  onToggleAppMode,
   potentialSavingsCount = 0,
-  pendingApprovalsCount = 0,
   anomaliesCount = 0,
-  renewalsSoonCount = 0,
   companies = [],
   selectedCompany,
   onSelectCompany,
@@ -93,18 +81,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isGroupTreeExpanded, setIsGroupTreeExpanded] = useState(true);
   const isEmployee = userRole === 'EMPLOYEE';
 
-  const activeComp = selectedCompany || companies[0] || {
-    id: 'default',
-    name: 'Enterprise',
-    isGroup: false,
-  };
-
   const safeUser = currentUser || {
     id: 'usr-guest',
     name: 'Guest Session',
     email: 'guest@enterprise.internal',
     role: userRole,
     departmentName: 'Public Access',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   };
 
   const parentGroup = companies.find((c) => c.isGroup) || companies[0] || null;
@@ -127,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Cost Reduction & Savings',
           icon: TrendingDown,
           badge: potentialSavingsCount > 0 ? `${potentialSavingsCount} Leaks` : 'Active',
-          badgeColor: 'bg-emerald-50 text-emerald-700 font-bold border border-emerald-200',
+          badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
           visible: !isEmployee,
         },
         {
@@ -135,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: '39 Depts & P&L Ceilings',
           icon: Building2,
           badge: 'Live Burn',
-          badgeColor: 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200',
+          badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
           visible: true,
         },
         {
@@ -143,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'App Sync & Ingestion',
           icon: Zap,
           badge: 'Live Sync',
-          badgeColor: 'bg-blue-50 text-blue-700 font-bold border border-blue-200',
+          badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
           visible: true,
         },
       ],
@@ -156,54 +139,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: isEmployee ? 'My Expenses' : 'Spend & Expense Audits',
           icon: Receipt,
           badge: anomaliesCount > 0 && !isEmployee ? `${anomaliesCount} alerts` : undefined,
-          badgeColor: 'bg-rose-50 text-rose-700 font-bold border border-rose-200',
+          badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
           visible: true,
-        },
-        {
-          id: 'IMPORT' as NavTab,
-          label: 'Import Expenses (CSV)',
-          icon: Database,
-          visible: !isEmployee,
         },
         {
           id: 'SUBSCRIPTIONS' as NavTab,
           label: 'SaaS & Cloud FinOps',
           icon: Layers,
-          badge: renewalsSoonCount > 0 ? `${renewalsSoonCount} renewing` : undefined,
-          badgeColor: 'bg-amber-50 text-amber-700 font-bold border border-amber-200',
           visible: !isEmployee,
         },
         {
           id: 'VENDORS' as NavTab,
-          label: 'Vendors',
+          label: 'Vendors & Procurement',
           icon: Store,
           visible: ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD'].includes(userRole),
-        },
-        {
-          id: 'ASSETS' as NavTab,
-          label: 'Assets & Hardware',
-          icon: Laptop,
-          visible: !isEmployee,
-        },
-        {
-          id: 'BUDGETS' as NavTab,
-          label: 'Budgets',
-          icon: PieChart,
-          visible: ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD', 'MANAGER'].includes(userRole),
-        },
-        {
-          id: 'PROCUREMENT' as NavTab,
-          label: 'Procurement & Approvals',
-          icon: ClipboardList,
-          badge: pendingApprovalsCount > 0 ? `${pendingApprovalsCount} pending` : undefined,
-          badgeColor: 'bg-amber-50 text-amber-700 font-bold border border-amber-200',
-          visible: true,
-        },
-        {
-          id: 'PROPERTY' as NavTab,
-          label: 'Property & Locations',
-          icon: Building,
-          visible: !isEmployee,
         },
       ],
     },
@@ -215,7 +164,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'AI FinOps Copilot',
           icon: Bot,
           badge: 'Gemini 3.7',
-          badgeColor: 'bg-purple-50 text-purple-700 font-bold border border-purple-200',
+          badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
           visible: true,
         },
         {
@@ -234,10 +183,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Settings & Demo Sandbox',
           icon: Settings,
           badge: appMode === 'PRODUCTION' ? 'LIVE DATA' : 'DEMO MODE',
-          badgeColor:
+          badgeClass:
             appMode === 'PRODUCTION'
-              ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'
-              : 'bg-amber-100 text-amber-800 font-bold border border-amber-300',
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              : 'bg-amber-100 text-amber-800 border-amber-300',
           visible: true,
         },
       ],
@@ -245,62 +194,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 flex-shrink-0 border-r border-[#E5E7EB] bg-white flex flex-col justify-between overflow-y-auto">
+    <aside className="w-64 flex-shrink-0 border-r bg-card flex flex-col justify-between overflow-y-auto">
       <div className="p-3.5 space-y-3">
         {/* Brand Header */}
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-100 pb-3">
+        <div className="flex items-center justify-between px-2 py-1.5 pb-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-xs shrink-0">
-              <span className="text-white font-black text-xs">CI</span>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-xs shrink-0">
+              <span className="text-primary-foreground font-black text-xs">CI</span>
             </div>
             <div className="min-w-0">
-              <h1 className="font-bold text-sm tracking-tight text-[#111827] truncate">CostPulse AI</h1>
-              <p className="text-[10px] text-gray-400 font-medium truncate">Cost Intelligence & Burn</p>
+              <h1 className="font-bold text-sm tracking-tight text-foreground truncate">CostPulse AI</h1>
+              <p className="text-[10px] text-muted-foreground font-medium truncate">Cost Intelligence & Burn</p>
             </div>
           </div>
         </div>
+        <Separator />
 
         {/* Environment Mode Status Card */}
-        <div
+        <button
           onClick={() => onSelectTab('SETTINGS')}
-          className={`cursor-pointer rounded-lg p-2 border transition-all text-xs flex items-center justify-between ${
+          className={cn(
+            'w-full cursor-pointer rounded-lg p-2 border transition-all text-xs flex items-center justify-between text-left',
             appMode === 'PRODUCTION'
               ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 hover:bg-emerald-100/70'
               : 'bg-amber-50/70 border-amber-200 text-amber-900 hover:bg-amber-100/70'
-          }`}
+          )}
           title="Click to open Settings & Mode Manager"
         >
           <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`h-2 w-2 rounded-full shrink-0 ${
+              className={cn(
+                'h-2 w-2 rounded-full shrink-0',
                 appMode === 'PRODUCTION' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              }`}
+              )}
             />
             <div className="min-w-0">
               <div className="font-bold text-[11px] leading-tight truncate">
                 {appMode === 'PRODUCTION' ? 'Live Real Database' : 'Demo Sandbox Mode'}
               </div>
-              <div className="text-[9px] text-gray-500 truncate">
-                {appMode === 'PRODUCTION' ? 'Local storage persistent' : 'Pre-loaded mock data'}
+              <div className="text-[9px] text-muted-foreground truncate">
+                {appMode === 'PRODUCTION' ? 'Synced to your account' : 'Pre-loaded mock data'}
               </div>
             </div>
           </div>
-          <span className="text-[10px] font-semibold underline text-blue-700 shrink-0">
-            Manage
-          </span>
-        </div>
+          <span className="text-[10px] font-semibold underline text-primary shrink-0">Manage</span>
+        </button>
 
         {/* Operating Organizations Tree */}
         {parentGroup && (
-          <div className="rounded-xl bg-slate-50 border border-slate-200/90 p-2 space-y-1.5">
+          <div className="rounded-xl bg-muted/50 border p-2 space-y-1.5">
             <div className="flex items-center justify-between px-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                <Building2 className="w-3 h-3 text-blue-600" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                <Building2 className="w-3 h-3 text-primary" />
                 <span>Operating Entities</span>
               </span>
               <button
                 onClick={() => setIsGroupTreeExpanded(!isGroupTreeExpanded)}
-                className="text-slate-400 hover:text-slate-600 text-[10px]"
+                className="text-muted-foreground hover:text-foreground text-[10px]"
               >
                 {isGroupTreeExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
               </button>
@@ -311,26 +261,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {/* Master Group */}
                 <button
                   onClick={() => onSelectCompany && onSelectCompany(parentGroup)}
-                  className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-bold transition-all text-left ${
+                  className={cn(
+                    'w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-bold transition-all text-left',
                     selectedCompany?.id === parentGroup.id
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-800 hover:bg-slate-200/60'
-                  }`}
+                      ? 'bg-primary text-primary-foreground shadow-xs'
+                      : 'text-foreground hover:bg-accent'
+                  )}
                 >
                   <span className="truncate">{parentGroup.name}</span>
                   <span
-                    className={`text-[9px] px-1 rounded font-mono ${
+                    className={cn(
+                      'text-[9px] px-1 rounded font-mono',
                       selectedCompany?.id === parentGroup.id
-                        ? 'bg-blue-700 text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
+                        ? 'bg-primary-foreground/20 text-primary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                    )}
                   >
                     ROLLUP
                   </span>
                 </button>
 
                 {/* Subsidiaries */}
-                <div className="pl-2 space-y-0.5 border-l border-slate-200 ml-1.5">
+                <div className="pl-2 space-y-0.5 border-l ml-1.5">
                   {groupSubsidiaries.map((sub) => {
                     const isSelected = selectedCompany?.id === sub.id;
 
@@ -338,14 +290,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <button
                         key={sub.id}
                         onClick={() => onSelectCompany && onSelectCompany(sub)}
-                        className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-[11px] font-medium transition-colors text-left ${
+                        className={cn(
+                          'w-full flex items-center justify-between px-2 py-1 rounded-md text-[11px] font-medium transition-colors text-left',
                           isSelected
-                            ? 'bg-blue-100 text-blue-900 font-bold'
-                            : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
-                        }`}
+                            ? 'bg-primary/10 text-primary font-bold'
+                            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                        )}
                       >
                         <span className="truncate max-w-[130px]">{sub.name.replace('Skandhanshi ', '')}</span>
-                        <span className="text-[9px] text-slate-400 font-mono">
+                        <span className="text-[9px] text-muted-foreground font-mono">
                           {sub.industryVertical?.substring(0, 4) || 'SUB'}
                         </span>
                       </button>
@@ -361,7 +314,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <nav className="space-y-4">
           {navSections.map((section, idx) => (
             <div key={idx} className="space-y-1">
-              <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 {section.title}
               </div>
               <div className="space-y-0.5">
@@ -372,29 +325,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     const isActive = currentTab === item.id;
 
                     return (
-                      <button
+                      <Button
                         key={item.id}
+                        variant="ghost"
                         onClick={() => onSelectTab(item.id)}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        className={cn(
+                          'w-full justify-between px-2.5 py-1.5 h-auto rounded-lg text-xs font-medium',
                           isActive
-                            ? 'bg-blue-50 text-blue-700 font-bold border border-blue-100'
-                            : 'text-gray-600 hover:bg-gray-50 hover:text-[#111827]'
-                        }`}
+                            ? 'bg-primary/10 text-primary font-bold border border-primary/20 hover:bg-primary/10 hover:text-primary'
+                            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                        )}
                       >
                         <div className="flex items-center gap-2 truncate">
-                          <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                          <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : 'text-muted-foreground')} />
                           <span className="truncate">{item.label}</span>
                         </div>
                         {item.badge && (
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[9px] shrink-0 font-bold ${
-                              item.badgeColor || 'bg-gray-100 text-gray-700'
-                            }`}
+                          <Badge
+                            variant="outline"
+                            className={cn('text-[9px] font-bold shrink-0', item.badgeClass)}
                           >
                             {item.badge}
-                          </span>
+                          </Badge>
                         )}
-                      </button>
+                      </Button>
                     );
                   })}
               </div>
@@ -404,53 +358,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* User Footer Card with Auth & Sign In / Sign Out */}
-      <div className="p-3 border-t border-gray-200 bg-gray-50/70">
+      <div className="p-3 border-t bg-muted/40">
         {!isAuthenticated ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 shrink-0">
-                <LogIn className="w-3.5 h-3.5" />
-              </div>
+              <Avatar className="w-7 h-7">
+                <AvatarFallback>
+                  <LogIn className="w-3.5 h-3.5" />
+                </AvatarFallback>
+              </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-gray-800 truncate">Not Signed In</p>
-                <p className="text-[10px] text-gray-500 truncate">Guest Session Mode</p>
+                <p className="text-xs font-bold text-foreground truncate">Not Signed In</p>
+                <p className="text-[10px] text-muted-foreground truncate">Guest Session Mode</p>
               </div>
             </div>
-            <button
-              onClick={onSignIn || onOpenAuthModal}
-              className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-            >
+            <Button onClick={onSignIn || onOpenAuthModal} className="w-full" size="sm">
               <LogIn className="w-3.5 h-3.5" />
               <span>Sign In to Organization</span>
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <Avatar name={safeUser.name} src={safeUser.avatar} size="sm" />
+              <Avatar className="w-7 h-7 border">
+                <AvatarImage src={safeUser.avatar} alt={safeUser.name} />
+                <AvatarFallback>{safeUser.name.charAt(0)}</AvatarFallback>
+              </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-[#111827] truncate">{safeUser.name}</p>
-                <p className="text-[10px] text-gray-400 truncate">{safeUser.role.replace('_', ' ')}</p>
+                <p className="text-xs font-bold text-foreground truncate">{safeUser.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{safeUser.role.replace('_', ' ')}</p>
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-1">
-              {onOpenAuthModal && appMode === 'DEMO' && (
-                <button
+              {onOpenAuthModal && (
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={onOpenAuthModal}
-                  className="px-1.5 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                  title="Switch Demo Persona"
+                  className="px-1.5 py-1 h-auto text-[10px] font-semibold text-primary hover:bg-primary/10"
+                  title="Switch Persona or Manage Identity"
                 >
                   Switch
-                </button>
+                </Button>
               )}
               {onSignOut && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={onSignOut}
-                  className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   title="Sign Out of Enterprise Session"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                </button>
+                </Button>
               )}
             </div>
           </div>
