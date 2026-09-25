@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import { attachSession, requireAuth } from "./server/auth";
 import { router as apiRouter } from "./server/routes";
-import { db } from "./server/db";
+import { db, ensureSchema } from "./server/db";
 import { aiUsageLog } from "./server/schema";
 import { eq, desc, gte } from "drizzle-orm";
 
@@ -960,6 +960,8 @@ CRITICAL OVERWRITE RULES:
 
 // Vite Middleware for Dev and Static Hosting for Production
 async function startServer() {
+  await ensureSchema();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
