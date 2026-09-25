@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select';
 
 interface AuthGateProps {
-  onAuthenticated: (user: UserProfile, workspace: WorkspaceData) => void;
+  onAuthenticated: (user: UserProfile, workspace: WorkspaceData, version: number) => void;
   onUseDemoInstead: () => void;
 }
 
@@ -43,7 +43,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, onUseDemoIn
     setLoading(true);
     try {
       const res = await api.login({ email, password });
-      onAuthenticated(res.user, res.workspace);
+      onAuthenticated(res.user, res.workspace, res.version);
     } catch (err: any) {
       setError(err?.message || 'Failed to sign in');
     } finally {
@@ -64,7 +64,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated, onUseDemoIn
         email: suEmail,
         password: suPassword,
       });
-      onAuthenticated(res.user, res.workspace);
+      onAuthenticated(res.user, res.workspace, res.version);
     } catch (err: any) {
       setError(err?.message || 'Failed to create account');
     } finally {

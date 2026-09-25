@@ -33,15 +33,11 @@ import {
 } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavTab } from './components/Sidebar';
-import { ExecutiveDashboard } from './components/ExecutiveDashboard';
-import { CfoDashboard } from './components/CfoDashboard';
-import { CtoDashboard } from './components/CtoDashboard';
-import { HrDashboard } from './components/HrDashboard';
-import { MasterDashboard } from './components/MasterDashboard';
 import { EmployeePortal } from './components/EmployeePortal';
 import { SavingsCenter } from './components/SavingsCenter';
 import { ExpensesView } from './components/ExpensesView';
-import { SubscriptionsView } from './components/SubscriptionsView';
+import { SubscriptionsView, needsDecision } from './components/SubscriptionsView';
+import { HomeView } from './components/HomeView';
 import { AssetsView } from './components/AssetsView';
 import { PropertyView } from './components/PropertyView';
 import { VendorsView } from './components/VendorsView';
@@ -73,7 +69,6 @@ import { AuthModal } from './components/AuthModal';
 import { AuthGate } from './components/AuthGate';
 import * as api from './utils/api';
 import { WorkspaceData } from './utils/api';
-import { getUpcomingRenewals } from './utils/formatters';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { AlternativeEngineModal } from './components/AlternativeEngineModal';
 import { ReceiptScannerModal } from './components/ReceiptScannerModal';
@@ -156,6 +151,7 @@ export function App() {
       .then((session) => {
         if (cancelled) return;
         if (session) {
+          versionRef.current = session.version;
           applyFullDataset({ ...session.workspace, currentUser: session.user } as EnterpriseAppData);
           setAuthView('APP');
         } else {
@@ -176,6 +172,10 @@ export function App() {
   // the session check and could overwrite server data with placeholder data).
   const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstAuthedRender = React.useRef(true);
+  // Server version of the workspace we last loaded/saved (optimistic lock).
+  const versionRef = React.useRef(0);
+  // Saves run one at a time so each one quotes the version the previous returned.
+  const saveChainRef = React.useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     if (appMode !== 'PRODUCTION' || authView !== 'APP') return;
     // Skip the very first render right after becoming authenticated — that
@@ -202,7 +202,24 @@ export function App() {
     };
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      api.saveWorkspace(workspace).catch((err) => console.error('Failed to save workspace:', err));
+      saveChainRef.current = saveChainRef.current.then(async () => {
+        try {
+          const res = await api.saveWorkspace(workspace, versionRef.current);
+          versionRef.current = res.version;
+        } catch (err) {
+          if (!(err instanceof api.ApiError && err.status === 409)) {
+            console.error('Failed to save workspace:', err);
+            return;
+          }
+          // Someone else saved first: take theirs rather than overwrite it.
+          // ponytail: last local edit is dropped (and said so); per-entity endpoints remove this.
+          const latest = await api.getWorkspace();
+          versionRef.current = latest.version;
+          isFirstAuthedRender.current = true; // don't echo the reload straight back
+          applyFullDataset({ ...latest.workspace, currentUser } as EnterpriseAppData);
+          window.alert(`${err.message} Your last change was not saved; please redo it.`);
+        }
+      });
     }, 800);
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -226,8 +243,9 @@ export function App() {
   ]);
 
   // Called by AuthGate once signup or login succeeds.
-  const handleAuthenticated = (user: UserProfile, workspace: WorkspaceData) => {
+  const handleAuthenticated = (user: UserProfile, workspace: WorkspaceData, version: number) => {
     isFirstAuthedRender.current = true;
+    versionRef.current = version;
     applyFullDataset({ ...workspace, currentUser: user } as EnterpriseAppData);
     setIsAuthenticated(true);
     setAuthView('APP');
@@ -390,6 +408,43 @@ export function App() {
     return changes;
   };
 
+  /** Edit handler for any record list: applies the update and logs a field-level
+   * diff to the audit trail. `ignore` adds derived fields to skip beyond id/companyId. */
+  const makeUpdate = <T extends { id: string }>(
+    setItems: React.Dispatch<React.SetStateAction<T[]>>,
+    action: string,
+    entityType: AuditLog['entityType'],
+    noun: string,
+    name: (x: T) => string,
+    ignore: string[],
+    label: (x: T) => string = name
+  ) => (id: string, updates: Partial<T>) =>
+    setItems((prev) =>
+      prev.map((x) => {
+        if (x.id !== id) return x;
+        const updated = { ...x, ...updates };
+        const changes = diffFields(x, updated, ['id', 'companyId', ...ignore]);
+        if (changes.length > 0) {
+          logAuditEvent(action, entityType, `Edited ${noun} "${label(x)}"`, { entityId: x.id, entityName: name(updated), changes });
+        }
+        return updated;
+      })
+    );
+
+  /** Delete handler for any record list: removes it and logs `details(record)`. */
+  const makeDelete = <T extends { id: string }>(
+    setItems: React.Dispatch<React.SetStateAction<T[]>>,
+    action: string,
+    entityType: AuditLog['entityType'],
+    name: (x: T) => string,
+    details: (x: T) => string
+  ) => (id: string) =>
+    setItems((prev) => {
+      const target = prev.find((x) => x.id === id);
+      if (target) logAuditEvent(action, entityType, details(target), { entityId: target.id, entityName: name(target) });
+      return prev.filter((x) => x.id !== id);
+    });
+
   // Handler: Update Savings Opportunity Status
   const handleUpdateOpportunityStatus = (id: string, newStatus: OpportunityStatus) => {
     setSavings((prev) =>
@@ -443,39 +498,8 @@ export function App() {
     });
   };
 
-  // Handler: Update Expense — computes a real field-level diff so the audit
-  // trail shows exactly what changed, not just that "something" did.
-  const handleUpdateExpense = (id: string, updates: Partial<Expense>) => {
-    setExpenses((prev) =>
-      prev.map((e) => {
-        if (e.id !== id) return e;
-        const updated = { ...e, ...updates };
-        const changes = diffFields(e, updated, ['id', 'companyId', 'employeeId', 'departmentId', 'vendorId', 'costCenter', 'tags']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_EXPENSE', 'EXPENSE', `Edited expense "${e.description}"`, {
-            entityId: e.id,
-            entityName: updated.description,
-            changes,
-          });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete Expense
-  const handleDeleteExpense = (id: string) => {
-    setExpenses((prev) => {
-      const target = prev.find((e) => e.id === id);
-      if (target) {
-        logAuditEvent('DELETED_EXPENSE', 'EXPENSE', `Deleted expense "${target.description}" (${target.amount} ${target.currency})`, {
-          entityId: target.id,
-          entityName: target.description,
-        });
-      }
-      return prev.filter((e) => e.id !== id);
-    });
-  };
+  const handleUpdateExpense = makeUpdate(setExpenses, 'UPDATED_EXPENSE', 'EXPENSE', 'expense', (e) => e.description, ['employeeId', 'departmentId', 'vendorId', 'costCenter', 'tags']);
+  const handleDeleteExpense = makeDelete(setExpenses, 'DELETED_EXPENSE', 'EXPENSE', (e) => e.description, (e) => `Deleted expense "${e.description}" (${e.amount} ${e.currency})`);
 
   // Handler: Batch Import
   const handleBatchImport = (items: Partial<Expense>[]) => {
@@ -508,26 +532,30 @@ export function App() {
 
   // Handler: Add Subscription
   const handleAddSubscription = (newSub: Partial<Subscription>) => {
+    // Only what the user actually entered; never invent seats, cost or usage.
+    const seatsTotal = newSub.seatsTotal ?? 0;
+    const seatsUsed = newSub.seatsUsed ?? 0;
     const sub: Subscription = {
+      softwareName: 'New Tool',
+      vendorName: newSub.softwareName || 'Vendor',
+      category: 'Productivity & Collaboration',
+      planName: '',
+      annualCost: 0,
+      monthlyCost: 0,
+      billingCycle: 'Annual',
+      renewalDate: '',
+      contractEnd: newSub.renewalDate || '',
+      ownerName: currentUser.name,
+      departmentName: 'Unassigned',
+      status: 'ACTIVE',
+      ...newSub,
       id: `sub-${Date.now()}`,
       companyId: selectedCompany.id,
-      softwareName: newSub.softwareName || 'New Tool',
-      vendorName: newSub.vendorName || 'Vendor',
-      category: newSub.category || 'Productivity & Collaboration',
-      planName: newSub.planName || 'Standard',
-      seatsTotal: newSub.seatsTotal || 10,
-      seatsUsed: newSub.seatsUsed || 8,
-      seatsUnused: newSub.seatsUnused || 2,
-      annualCost: newSub.annualCost || 100000,
-      monthlyCost: newSub.monthlyCost || Math.round((newSub.annualCost || 100000) / 12),
       currency: currency,
-      billingCycle: newSub.billingCycle || 'Annual',
-      renewalDate: newSub.renewalDate || '2026-12-31',
-      contractEnd: newSub.contractEnd || '2027-12-31',
-      ownerName: newSub.ownerName || currentUser.name,
-      departmentName: newSub.departmentName || 'Core Platform Engineering',
-      usageRate: newSub.usageRate || 80,
-      status: newSub.status || 'ACTIVE',
+      seatsTotal,
+      seatsUsed,
+      seatsUnused: Math.max(0, seatsTotal - seatsUsed),
+      usageRate: seatsTotal > 0 ? Math.round((seatsUsed / seatsTotal) * 100) : 0,
     };
 
     setSubscriptions((prev) => [sub, ...prev]);
@@ -537,38 +565,8 @@ export function App() {
     });
   };
 
-  // Handler: Update Subscription
-  const handleUpdateSubscription = (id: string, updates: Partial<Subscription>) => {
-    setSubscriptions((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        const updated = { ...s, ...updates };
-        const changes = diffFields(s, updated, ['id', 'companyId', 'currency', 'contractEnd', 'usageRate']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_SUBSCRIPTION', 'SUBSCRIPTION', `Edited subscription "${s.softwareName}"`, {
-            entityId: s.id,
-            entityName: updated.softwareName,
-            changes,
-          });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete Subscription
-  const handleDeleteSubscription = (id: string) => {
-    setSubscriptions((prev) => {
-      const target = prev.find((s) => s.id === id);
-      if (target) {
-        logAuditEvent('DELETED_SUBSCRIPTION', 'SUBSCRIPTION', `Deleted subscription "${target.softwareName}"`, {
-          entityId: target.id,
-          entityName: target.softwareName,
-        });
-      }
-      return prev.filter((s) => s.id !== id);
-    });
-  };
+  const handleUpdateSubscription = makeUpdate(setSubscriptions, 'UPDATED_SUBSCRIPTION', 'SUBSCRIPTION', 'subscription', (s) => s.softwareName, ['currency', 'contractEnd', 'usageRate']);
+  const handleDeleteSubscription = makeDelete(setSubscriptions, 'DELETED_SUBSCRIPTION', 'SUBSCRIPTION', (s) => s.softwareName, (s) => `Deleted subscription "${s.softwareName}"`);
 
   // Handler: Add Asset
   const handleAddAsset = (newAst: Partial<Asset>) => {
@@ -599,34 +597,8 @@ export function App() {
     });
   };
 
-  // Handler: Update Asset
-  const handleUpdateAsset = (id: string, updates: Partial<Asset>) => {
-    setAssets((prev) =>
-      prev.map((a) => {
-        if (a.id !== id) return a;
-        const updated = { ...a, ...updates };
-        const changes = diffFields(a, updated, ['id', 'companyId', 'currentValue', 'utilizationScore', 'maintenanceCostYearly', 'insuranceCostYearly', 'depreciationRateYearly']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_ASSET', 'ASSET', `Edited asset "${a.name}"`, { entityId: a.id, entityName: updated.name, changes });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete Asset
-  const handleDeleteAsset = (id: string) => {
-    setAssets((prev) => {
-      const target = prev.find((a) => a.id === id);
-      if (target) {
-        logAuditEvent('DELETED_ASSET', 'ASSET', `Deleted asset "${target.name}" (${target.serialNumber})`, {
-          entityId: target.id,
-          entityName: target.name,
-        });
-      }
-      return prev.filter((a) => a.id !== id);
-    });
-  };
+  const handleUpdateAsset = makeUpdate(setAssets, 'UPDATED_ASSET', 'ASSET', 'asset', (a) => a.name, ['currentValue', 'utilizationScore', 'maintenanceCostYearly', 'insuranceCostYearly', 'depreciationRateYearly']);
+  const handleDeleteAsset = makeDelete(setAssets, 'DELETED_ASSET', 'ASSET', (a) => a.name, (a) => `Deleted asset "${a.name}" (${a.serialNumber})`);
 
   // Handler: Add Vendor
   const handleAddVendor = (newVendor: Partial<Vendor>) => {
@@ -654,31 +626,8 @@ export function App() {
     });
   };
 
-  // Handler: Update Vendor
-  const handleUpdateVendor = (id: string, updates: Partial<Vendor>) => {
-    setVendors((prev) =>
-      prev.map((v) => {
-        if (v.id !== id) return v;
-        const updated = { ...v, ...updates };
-        const changes = diffFields(v, updated, ['id', 'companyId']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_VENDOR', 'VENDOR', `Edited vendor "${v.name}"`, { entityId: v.id, entityName: updated.name, changes });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete Vendor
-  const handleDeleteVendor = (id: string) => {
-    setVendors((prev) => {
-      const target = prev.find((v) => v.id === id);
-      if (target) {
-        logAuditEvent('DELETED_VENDOR', 'VENDOR', `Deleted vendor "${target.name}"`, { entityId: target.id, entityName: target.name });
-      }
-      return prev.filter((v) => v.id !== id);
-    });
-  };
+  const handleUpdateVendor = makeUpdate(setVendors, 'UPDATED_VENDOR', 'VENDOR', 'vendor', (v) => v.name, []);
+  const handleDeleteVendor = makeDelete(setVendors, 'DELETED_VENDOR', 'VENDOR', (v) => v.name, (v) => `Deleted vendor "${v.name}"`);
 
   // Handler: Add Budget
   const handleAddBudget = (newBudget: Partial<Budget>) => {
@@ -704,38 +653,9 @@ export function App() {
     });
   };
 
-  // Handler: Update Budget
-  const handleUpdateBudget = (id: string, updates: Partial<Budget>) => {
-    setBudgets((prev) =>
-      prev.map((b) => {
-        if (b.id !== id) return b;
-        const updated = { ...b, ...updates };
-        const changes = diffFields(b, updated, ['id', 'companyId', 'currency']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_BUDGET', 'BUDGET', `Edited budget for "${b.departmentName}"`, {
-            entityId: b.id,
-            entityName: `${updated.departmentName} — ${updated.fiscalQuarter}`,
-            changes,
-          });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete Budget
-  const handleDeleteBudget = (id: string) => {
-    setBudgets((prev) => {
-      const target = prev.find((b) => b.id === id);
-      if (target) {
-        logAuditEvent('DELETED_BUDGET', 'BUDGET', `Deleted budget for "${target.departmentName}" (${target.fiscalQuarter})`, {
-          entityId: target.id,
-          entityName: `${target.departmentName} — ${target.fiscalQuarter}`,
-        });
-      }
-      return prev.filter((b) => b.id !== id);
-    });
-  };
+  const budgetName = (b: Budget) => `${b.departmentName} — ${b.fiscalQuarter}`;
+  const handleUpdateBudget = makeUpdate(setBudgets, 'UPDATED_BUDGET', 'BUDGET', 'budget for', budgetName, ['currency'], (b) => b.departmentName);
+  const handleDeleteBudget = makeDelete(setBudgets, 'DELETED_BUDGET', 'BUDGET', budgetName, (b) => `Deleted budget for "${b.departmentName}" (${b.fiscalQuarter})`);
 
   // Handler: Add Procurement Request
   const handleAddProcurement = (newReq: Partial<ProcurementRequest>) => {
@@ -744,6 +664,7 @@ export function App() {
       companyId: selectedCompany.id,
       title: newReq.title || 'New Purchase Requisition',
       requestedByName: newReq.requestedByName || currentUser.name,
+      requestedById: currentUser.id,
       departmentName: newReq.departmentName || currentUser.departmentName || 'General',
       estimatedCost: newReq.estimatedCost || 50000,
       currency: currency,
@@ -769,38 +690,9 @@ export function App() {
     });
   };
 
-  // Handler: Update Procurement Request (only while still pending)
-  const handleUpdateProcurement = (id: string, updates: Partial<ProcurementRequest>) => {
-    setProcurements((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        const updated = { ...p, ...updates };
-        const changes = diffFields(p, updated, ['id', 'companyId', 'currency', 'status', 'requestDate']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_PROCUREMENT_REQUEST', 'PROCUREMENT', `Edited requisition "${p.title}"`, {
-            entityId: p.id,
-            entityName: updated.title,
-            changes,
-          });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete/Withdraw Procurement Request
-  const handleDeleteProcurement = (id: string) => {
-    setProcurements((prev) => {
-      const target = prev.find((p) => p.id === id);
-      if (target) {
-        logAuditEvent('WITHDREW_PROCUREMENT_REQUEST', 'PROCUREMENT', `Withdrew requisition "${target.title}" (${target.estimatedCost} ${target.currency})`, {
-          entityId: target.id,
-          entityName: target.title,
-        });
-      }
-      return prev.filter((p) => p.id !== id);
-    });
-  };
+  // Procurement requests are only editable/withdrawable while still pending
+  const handleUpdateProcurement = makeUpdate(setProcurements, 'UPDATED_PROCUREMENT_REQUEST', 'PROCUREMENT', 'requisition', (p) => p.title, ['currency', 'status', 'requestDate']);
+  const handleDeleteProcurement = makeDelete(setProcurements, 'WITHDREW_PROCUREMENT_REQUEST', 'PROCUREMENT', (p) => p.title, (p) => `Withdrew requisition "${p.title}" (${p.estimatedCost} ${p.currency})`);
 
   // Handler: Add Property
   const handleAddProperty = (newProp: Partial<PropertyLocation>) => {
@@ -833,34 +725,8 @@ export function App() {
     });
   };
 
-  // Handler: Update Property
-  const handleUpdateProperty = (id: string, updates: Partial<PropertyLocation>) => {
-    setProperties((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        const updated = { ...p, ...updates };
-        const changes = diffFields(p, updated, ['id', 'companyId', 'currency', 'costPerSqFt', 'costPerSeat', 'costPerOccupiedSeat', 'utilizationRate']);
-        if (changes.length > 0) {
-          logAuditEvent('UPDATED_PROPERTY', 'PROPERTY', `Edited property "${p.name}"`, { entityId: p.id, entityName: updated.name, changes });
-        }
-        return updated;
-      })
-    );
-  };
-
-  // Handler: Delete Property
-  const handleDeleteProperty = (id: string) => {
-    setProperties((prev) => {
-      const target = prev.find((p) => p.id === id);
-      if (target) {
-        logAuditEvent('DELETED_PROPERTY', 'PROPERTY', `Deleted property "${target.name}" (${target.city})`, {
-          entityId: target.id,
-          entityName: target.name,
-        });
-      }
-      return prev.filter((p) => p.id !== id);
-    });
-  };
+  const handleUpdateProperty = makeUpdate(setProperties, 'UPDATED_PROPERTY', 'PROPERTY', 'property', (p) => p.name, ['currency', 'costPerSqFt', 'costPerSeat', 'costPerOccupiedSeat', 'utilizationRate']);
+  const handleDeleteProperty = makeDelete(setProperties, 'DELETED_PROPERTY', 'PROPERTY', (p) => p.name, (p) => `Deleted property "${p.name}" (${p.city})`);
 
   // Handler: Direct Approval / Rejection
   const handleApproveExpense = (id: string, notes?: string) => {
@@ -1139,17 +1005,6 @@ export function App() {
       );
     }
 
-    if (currentTab === 'EMPLOYEES') {
-      return (
-        <HrDashboard
-          currency={currency}
-          savings={savings}
-          departments={departments}
-          onNavigateTab={(tab) => setCurrentTab(tab)}
-        />
-      );
-    }
-
     if (currentTab === 'VENDORS') {
       return (
         <VendorsView
@@ -1292,100 +1147,34 @@ export function App() {
       );
     }
 
-    // Default: 'DASHBOARD' -> Choose view based on active User Role
-    switch (currentUser.role) {
-      case 'MASTER':
-        return (
-          <MasterDashboard
-            companies={companies}
-            currency={currency}
-            auditLogs={auditLogs}
-            onSelectCompany={(c) => setSelectedCompany(c)}
-            onAddNewCompany={(newComp) => {
-              const fullComp: Company = {
-                id: `comp-${Date.now()}`,
-                name: newComp.name || 'New Enterprise',
-                industry: newComp.industry || 'Technology',
-                size: newComp.size || '51-200',
-                headquarters: newComp.headquarters || 'Bengaluru',
-                currency: 'INR',
-                annualRevenue: newComp.annualRevenue || 100000000,
-                monthlyBurn: newComp.monthlyBurn || 3000000,
-                totalExpensesYear: newComp.totalExpensesYear || 36000000,
-                fiscalYear: 'FY 2026-27',
-              };
-              setCompanies((prev) => [...prev, fullComp]);
-              setSelectedCompany(fullComp);
-            }}
-          />
-        );
-
-      case 'CFO':
-        return (
-          <CfoDashboard
-            company={selectedCompany}
-            expenses={expenses}
-            budgets={budgets}
-            vendors={vendors}
-            savings={savings}
-            currency={currency}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-            onApproveExpense={handleApproveExpense}
-          />
-        );
-
-      case 'CTO':
-        return (
-          <CtoDashboard
-            subscriptions={subscriptions}
-            assets={assets}
-            savings={savings}
-            currency={currency}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-            onOpenAlternativeEngine={(item) => setAlternativeTarget(item)}
-          />
-        );
-
-      case 'HR':
-        return (
-          <HrDashboard
-            currency={currency}
-            savings={savings}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-          />
-        );
-
-      case 'EMPLOYEE':
-        return (
-          <EmployeePortal
-            currentUser={currentUser}
-            expenses={expenses}
-            assets={assets}
-            currency={currency}
-            onSubmitExpense={handleAddExpense}
-            onSubmitProcurement={handleAddProcurement}
-            onOpenReceiptScan={() => setIsReceiptScanOpen(true)}
-          />
-        );
-
-      case 'MD_CEO':
-      case 'DEPT_HEAD':
-      case 'MANAGER':
-      default:
-        return (
-          <ExecutiveDashboard
-            company={selectedCompany}
-            savings={savings}
-            expenses={expenses}
-            departments={departments}
-            currency={currency}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-            onUpdateOpportunityStatus={handleUpdateOpportunityStatus}
-            onTriggerAudit={handleTriggerAudit}
-            isAuditing={isAuditing}
-          />
-        );
+    // Default: 'DASHBOARD'. Employees get their own portal; everyone else
+    // gets one Home (roles control permissions, not which dashboard you see).
+    if (currentUser.role === 'EMPLOYEE') {
+      return (
+        <EmployeePortal
+          currentUser={currentUser}
+          expenses={expenses}
+          assets={assets}
+          currency={currency}
+          onSubmitExpense={handleAddExpense}
+          onSubmitProcurement={handleAddProcurement}
+          onOpenReceiptScan={() => setIsReceiptScanOpen(true)}
+        />
+      );
     }
+    return (
+      <HomeView
+        userName={currentUser.name}
+        userRole={currentUser.role}
+        currency={currency}
+        expenses={expenses}
+        procurements={procurements}
+        subscriptions={subscriptions}
+        savings={savings}
+        budgets={budgets}
+        onNavigate={(tab) => setCurrentTab(tab)}
+      />
+    );
   };
 
   if (authView === 'LOADING') {
@@ -1409,29 +1198,18 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#F9FAFB] font-sans text-[#111827] antialiased selection:bg-blue-600 selection:text-white">
+    <div className="flex h-screen w-screen overflow-hidden bg-background font-sans text-foreground antialiased">
       {/* Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}
         userRole={currentUser.role}
-        isAuthenticated={isAuthenticated}
-        onSignOut={handleSignOut}
-        onSignIn={handleOpenPersonaModal}
         appMode={appMode}
-        onToggleAppMode={() => handleSwitchAppMode(appMode === 'PRODUCTION' ? 'DEMO' : 'PRODUCTION')}
         onSelectTab={(tab) => setCurrentTab(tab)}
-        potentialSavingsCount={savings.filter((s) => s.status === 'DETECTED').length}
         pendingApprovalsCount={
           expenses.filter((e) => e.approvalStatus === 'PENDING').length +
           procurements.filter((p) => p.status === 'SUBMITTED' || p.status === 'MANAGER_APPROVED').length
         }
-        anomaliesCount={expenses.filter((e) => e.isAnomaly).length}
-        renewalsSoonCount={getUpcomingRenewals(subscriptions, 30).length}
-        companies={companies}
-        selectedCompany={selectedCompany}
-        onSelectCompany={(comp) => setSelectedCompany(comp)}
-        currentUser={currentUser}
-        onOpenAuthModal={handleOpenPersonaModal}
+        renewalsSoonCount={subscriptions.filter(needsDecision).length}
       />
 
       {/* Main App Layout */}
@@ -1444,22 +1222,13 @@ export function App() {
           isAuthenticated={isAuthenticated}
           onSignOut={handleSignOut}
           onSignIn={handleOpenPersonaModal}
-          currency={currency}
           appMode={appMode}
-          onToggleAppMode={() => handleSwitchAppMode(appMode === 'PRODUCTION' ? 'DEMO' : 'PRODUCTION')}
           onOpenSettings={() => setCurrentTab('SETTINGS')}
           onSelectCompany={(comp) => setSelectedCompany(comp)}
           onSelectUser={handleSelectUser}
-          onChangeCurrency={(cur) => setCurrency(cur)}
           onOpenSearch={() => setIsSearchOpen(true)}
-          onOpenOnboarding={() => setIsOnboardingOpen(true)}
-          onOpenAuthModal={handleOpenPersonaModal}
           onOpenAiChat={() => setCurrentTab('AI_ANALYST')}
           demoUsers={DEMO_USERS}
-          pendingApprovalsCount={
-            expenses.filter((e) => e.approvalStatus === 'PENDING').length +
-            procurements.filter((p) => p.status === 'SUBMITTED' || p.status === 'MANAGER_APPROVED').length
-          }
         />
 
         {/* Dynamic Workspace Container */}

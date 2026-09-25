@@ -161,6 +161,10 @@ export interface Subscription {
   planName: string;
   usageRate: number; // percentage 0 - 100
   status: 'ACTIVE' | 'UNDERUTILIZED' | 'UNUSED' | 'REDUNDANT' | 'PENDING_REVIEW';
+  /** Days before renewalDate by which the vendor must be told you're cancelling/changing. */
+  noticePeriodDays?: number;
+  /** What the owner decided for the next renewal. Unset = still needs a decision. */
+  decision?: 'RENEW' | 'RENEGOTIATE' | 'CANCEL';
   aiAlert?: {
     type: 'UNUSED_SEATS' | 'DUPLICATE_FUNCTION' | 'OVERPRICED_PLAN' | 'UPCOMING_RENEWAL' | 'CHEAPER_ALTERNATIVE';
     potentialSavingAnnual: number;
@@ -267,6 +271,7 @@ export interface ProcurementRequest {
   companyId: string;
   title: string;
   requestedByName: string;
+  requestedById?: string; // users.id; lets the server scope employee edits to their own requests
   departmentName: string;
   estimatedCost: number;
   currency: CurrencyCode;
