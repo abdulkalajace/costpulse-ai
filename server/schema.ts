@@ -25,6 +25,9 @@ export const accounts = pgTable("accounts", {
   industry: text("industry").notNull().default(""),
   currency: text("currency").notNull().default("INR"),
   workspace: jsonb("workspace").notNull().default({}),
+  // Bumped on every workspace save; a save must quote the version it loaded,
+  // so two people editing at once can't silently overwrite each other.
+  version: integer("version").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

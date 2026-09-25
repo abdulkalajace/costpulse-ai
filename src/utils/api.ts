@@ -36,6 +36,7 @@ export interface AuthResponse {
   success: true;
   user: UserProfile;
   workspace: WorkspaceData;
+  version: number;
 }
 
 export function signup(input: {
@@ -68,13 +69,14 @@ export async function getSession(): Promise<AuthResponse | null> {
 }
 
 export function getWorkspace() {
-  return request<{ success: true; workspace: WorkspaceData }>('/workspace', { method: 'GET' });
+  return request<{ success: true; workspace: WorkspaceData; version: number }>('/workspace', { method: 'GET' });
 }
 
-export function saveWorkspace(workspace: WorkspaceData) {
-  return request<{ success: true; workspace: WorkspaceData }>('/workspace', {
+/** `version` is the one last loaded/saved; a stale version gets a 409. */
+export function saveWorkspace(workspace: WorkspaceData, version: number) {
+  return request<{ success: true; workspace: WorkspaceData; version: number }>('/workspace', {
     method: 'PUT',
-    body: JSON.stringify({ workspace }),
+    body: JSON.stringify({ workspace, version }),
   });
 }
 

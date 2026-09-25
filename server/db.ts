@@ -26,3 +26,10 @@ export const pool = new Pool({
 });
 
 export const db = drizzle(pool, { schema });
+
+// Additive columns the code needs, applied on boot so a deploy can't run
+// ahead of `npm run db:push`. Idempotent; mirrors server/schema.ts.
+// ponytail: hand-listed; switch to drizzle migrations once there are several.
+export async function ensureSchema() {
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 0`);
+}

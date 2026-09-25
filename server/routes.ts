@@ -3,6 +3,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db } from "./db";
 import { accounts, users, aiUsageLog, auditLog } from "./schema";
 import { createId } from "./id";
+import { applyEmployeeWrite } from "./workspaceGuard";
 import {
   hashPassword,
   verifyPassword,
@@ -135,7 +136,7 @@ router.post("/auth/signup", async (req, res) => {
     const token = signSession({ userId: user.id, accountId: account.id, email: user.email, role: user.role });
     setSessionCookie(res, token);
 
-    res.json({ success: true, user: toPublicUser(user), workspace: account.workspace });
+    res.json({ success: true, user: toPublicUser(user), workspace: account.workspace, version: account.version });
   } catch (error: any) {
     console.error("signup error:", error.message);
     res.status(500).json({ success: false, error: "Failed to create account" });
@@ -169,7 +170,7 @@ router.post("/auth/login", async (req, res) => {
     const token = signSession({ userId: user.id, accountId: account.id, email: user.email, role: user.role });
     setSessionCookie(res, token);
 
-    res.json({ success: true, user: toPublicUser(user), workspace: account.workspace });
+    res.json({ success: true, user: toPublicUser(user), workspace: account.workspace, version: account.version });
   } catch (error: any) {
     console.error("login error:", error.message);
     res.status(500).json({ success: false, error: "Failed to sign in" });
@@ -187,7 +188,7 @@ router.get("/auth/me", requireAuth, async (req, res) => {
     if (!user) return res.status(401).json({ success: false, error: "Session invalid" });
     const [account] = await db.select().from(accounts).where(eq(accounts.id, user.accountId)).limit(1);
     if (!account) return res.status(401).json({ success: false, error: "Session invalid" });
-    res.json({ success: true, user: toPublicUser(user), workspace: account.workspace });
+    res.json({ success: true, user: toPublicUser(user), workspace: account.workspace, version: account.version });
   } catch (error: any) {
     console.error("me error:", error.message);
     res.status(500).json({ success: false, error: "Failed to load session" });
@@ -235,7 +236,7 @@ router.get("/workspace", requireAuth, async (req, res) => {
   try {
     const [account] = await db.select().from(accounts).where(eq(accounts.id, req.session!.accountId)).limit(1);
     if (!account) return res.status(404).json({ success: false, error: "Workspace not found" });
-    res.json({ success: true, workspace: account.workspace });
+    res.json({ success: true, workspace: account.workspace, version: account.version });
   } catch (error: any) {
     console.error("get workspace error:", error.message);
     res.status(500).json({ success: false, error: "Failed to load workspace" });
@@ -244,16 +245,34 @@ router.get("/workspace", requireAuth, async (req, res) => {
 
 router.put("/workspace", requireAuth, async (req, res) => {
   try {
-    const { workspace } = req.body || {};
-    if (!workspace || typeof workspace !== "object") {
+    const { workspace, version } = req.body || {};
+    if (!workspace || typeof workspace !== "object" || !Number.isInteger(version)) {
       return res.status(400).json({ success: false, error: "Invalid workspace payload" });
     }
+    const accountId = req.session!.accountId;
+    const [current] = await db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+    if (!current) return res.status(404).json({ success: false, error: "Workspace not found" });
+
+    const conflict = () =>
+      res.status(409).json({
+        success: false,
+        error: "Someone else changed this workspace. Reloaded the latest version.",
+      });
+    if (current.version !== version) return conflict();
+
+    const next =
+      req.session!.role === "EMPLOYEE"
+        ? applyEmployeeWrite(current.workspace as Record<string, any>, workspace, req.session!.userId)
+        : workspace;
+
+    // The version check in WHERE closes the gap between the read above and this write.
     const [account] = await db
       .update(accounts)
-      .set({ workspace, currency: workspace.currency || undefined, updatedAt: new Date() })
-      .where(eq(accounts.id, req.session!.accountId))
+      .set({ workspace: next, currency: next.currency || undefined, version: version + 1, updatedAt: new Date() })
+      .where(and(eq(accounts.id, accountId), eq(accounts.version, version)))
       .returning();
-    res.json({ success: true, workspace: account.workspace });
+    if (!account) return conflict();
+    res.json({ success: true, workspace: account.workspace, version: account.version });
   } catch (error: any) {
     console.error("put workspace error:", error.message);
     res.status(500).json({ success: false, error: "Failed to save workspace" });

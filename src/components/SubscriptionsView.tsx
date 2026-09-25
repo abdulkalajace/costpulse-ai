@@ -1,20 +1,14 @@
-import React, { useState } from 'react';
-import {
-  Layers,
-  Search,
-  Plus,
-  Zap,
-  Calendar,
-  AlertCircle,
-  TrendingDown,
-  CheckCircle2,
-  AlertTriangle,
-  Users,
-  Pencil,
-  Trash2,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Search, Pencil, Trash2, ArrowLeftRight } from 'lucide-react';
 import { Subscription, CurrencyCode, UserRole } from '../types';
-import { formatCurrency, getStatusBadgeClass, getUpcomingRenewals, daysUntil } from '../utils/formatters';
+import { formatCurrency, daysUntil } from '../utils/formatters';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 
 interface SubscriptionsViewProps {
   subscriptions: Subscription[];
@@ -24,12 +18,91 @@ interface SubscriptionsViewProps {
   onAddSubscription: (sub: Partial<Subscription>) => void;
   onUpdateSubscription?: (id: string, updates: Partial<Subscription>) => void;
   onDeleteSubscription?: (id: string) => void;
-  onOpenAlternativeEngine: (item: {
-    itemName: string;
-    itemType: string;
-    currentCost: number;
-    currentVendor: string;
-  }) => void;
+  onOpenAlternativeEngine: (item: { itemName: string; itemType: string; currentCost: number; currentVendor: string }) => void;
+}
+
+type View = 'ALL' | 'DECIDE' | 'NO_OWNER' | 'UNUSED';
+type Decision = NonNullable<Subscription['decision']>;
+
+const CATEGORIES = ['AI Tools & Copilots', 'Productivity & Collaboration', 'CRM & Sales', 'Analytics & Data', 'Customer Support', 'Design & UI/UX', 'Finance & Accounting', 'Engineering & DevOps', 'Other'];
+const DECISIONS: { value: Decision; label: string }[] = [
+  { value: 'RENEW', label: 'Renew' },
+  { value: 'RENEGOTIATE', label: 'Renegotiate' },
+  { value: 'CANCEL', label: 'Cancel' },
+];
+const DECIDE_WINDOW_DAYS = 60;
+const selectClass = 'h-7 w-full border border-input bg-input/20 px-2 text-xs outline-none focus-visible:border-ring';
+
+/** Last day you can still tell the vendor you're cancelling/changing. */
+export function noticeBy(sub: Subscription): string {
+  if (!sub.renewalDate || !sub.noticePeriodDays) return sub.renewalDate;
+  const d = new Date(sub.renewalDate);
+  if (Number.isNaN(d.getTime())) return sub.renewalDate;
+  d.setDate(d.getDate() - sub.noticePeriodDays);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Renewal is coming up and nobody has decided what to do about it. */
+export const needsDecision = (s: Subscription) => {
+  const d = daysUntil(s.renewalDate);
+  return !s.decision && d >= 0 && d <= DECIDE_WINDOW_DAYS;
+};
+
+/** Undecided and the notice deadline is within a week, or already missed. */
+const isUrgent = (s: Subscription) => needsDecision(s) && !!s.noticePeriodDays && daysUntil(noticeBy(s)) <= 7;
+
+const formatDate = (iso: string) =>
+  iso && !Number.isNaN(Date.parse(iso)) ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+function relative(iso: string) {
+  const d = daysUntil(iso);
+  if (Number.isNaN(d)) return '';
+  if (d === 0) return 'today';
+  return d > 0 ? `in ${d}d` : `${-d}d ago`;
+}
+
+// Form values are strings so empty fields stay empty instead of becoming 0.
+const emptyForm = {
+  softwareName: '', vendorName: '', planName: '', ownerName: '', departmentName: '',
+  category: CATEGORIES[1], billingCycle: 'Annual' as Subscription['billingCycle'], amount: '', customCycleMonths: '1',
+  renewalDate: '', noticePeriodDays: '30', seatsTotal: '', seatsUsed: '',
+};
+type Form = typeof emptyForm;
+
+function toForm(s: Subscription): Form {
+  const amount = s.billingCycle === 'Monthly' ? s.monthlyCost : s.billingCycle === 'Custom' ? s.monthlyCost * (s.customCycleMonths || 1) : s.annualCost;
+  return {
+    softwareName: s.softwareName, vendorName: s.vendorName, planName: s.planName, ownerName: s.ownerName,
+    departmentName: s.departmentName, category: s.category, billingCycle: s.billingCycle, amount: String(amount),
+    customCycleMonths: String(s.customCycleMonths || 1), renewalDate: s.renewalDate,
+    noticePeriodDays: s.noticePeriodDays == null ? '' : String(s.noticePeriodDays),
+    seatsTotal: String(s.seatsTotal || ''), seatsUsed: String(s.seatsUsed || ''),
+  };
+}
+
+function fromForm(f: Form): Partial<Subscription> {
+  const months = f.billingCycle === 'Monthly' ? 1 : f.billingCycle === 'Annual' ? 12 : Math.max(1, Number(f.customCycleMonths) || 1);
+  const monthly = Number(f.amount) / months;
+  const seatsTotal = Number(f.seatsTotal) || 0;
+  const seatsUsed = Number(f.seatsUsed) || 0;
+  return {
+    softwareName: f.softwareName.trim(),
+    vendorName: f.vendorName.trim() || f.softwareName.trim(),
+    planName: f.planName.trim(),
+    ownerName: f.ownerName.trim(),
+    departmentName: f.departmentName || 'Unassigned',
+    category: f.category,
+    billingCycle: f.billingCycle,
+    customCycleMonths: f.billingCycle === 'Custom' ? months : undefined,
+    monthlyCost: Math.round(monthly),
+    annualCost: Math.round(monthly * 12),
+    renewalDate: f.renewalDate,
+    noticePeriodDays: f.noticePeriodDays === '' ? undefined : Number(f.noticePeriodDays),
+    seatsTotal,
+    seatsUsed,
+    seatsUnused: Math.max(0, seatsTotal - seatsUsed),
+    status: seatsTotal > 0 && seatsUsed < seatsTotal * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
+  };
 }
 
 export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
@@ -42,611 +115,382 @@ export const SubscriptionsView: React.FC<SubscriptionsViewProps> = ({
   onDeleteSubscription,
   onOpenAlternativeEngine,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState('ALL');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [view, setView] = useState<View>('ALL');
+  const [query, setQuery] = useState('');
+  // Drawer shows a subscription id to view/edit, or 'NEW'. The id outlives
+  // `drawerOpen` so the content doesn't blank out during the close animation.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<Form>(emptyForm);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const canManage = Boolean(onUpdateSubscription || onDeleteSubscription) && ['MASTER', 'MD_CEO', 'CFO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
+  const canManage = ['MASTER', 'MD_CEO', 'CFO', 'CTO', 'DEPT_HEAD', 'MANAGER'].includes(userRole);
+  const open = openId && openId !== 'NEW' ? subscriptions.find((s) => s.id === openId) : undefined;
+  const ownerSuggestions = useMemo(() => [...new Set(subscriptions.map((s) => s.ownerName).filter(Boolean))], [subscriptions]);
 
-  // Form state
-  const [toolName, setToolName] = useState('');
-  const [vendorName, setVendorName] = useState('');
-  const [planName, setPlanName] = useState('Enterprise');
-  const [seatsTotal, setSeatsTotal] = useState(50);
-  const [seatsUsed, setSeatsUsed] = useState(40);
-  const [billingCycle, setBillingCycle] = useState<'Monthly' | 'Annual' | 'Custom'>('Annual');
-  const [amountPaid, setAmountPaid] = useState(250000);
-  const [customCycleMonths, setCustomCycleMonths] = useState(1);
-  const [category, setCategory] = useState('Productivity & Collaboration');
-  const [dept, setDept] = useState('');
-  const [renewal, setRenewal] = useState('2026-12-31');
+  const counts = {
+    ALL: subscriptions.length,
+    DECIDE: subscriptions.filter(needsDecision).length,
+    NO_OWNER: subscriptions.filter((s) => !s.ownerName).length,
+    UNUSED: subscriptions.filter((s) => s.seatsUnused > 0).length,
+  };
 
-  const categories = ['ALL', 'AI Tools & Copilots', 'Productivity & Collaboration', 'CRM & Sales', 'Analytics & Data', 'Customer Support', 'Design & UI/UX', 'Finance & Accounting'];
+  const rows = subscriptions
+    .filter((s) =>
+      view === 'DECIDE' ? needsDecision(s) : view === 'NO_OWNER' ? !s.ownerName : view === 'UNUSED' ? s.seatsUnused > 0 : true
+    )
+    .filter((s) => {
+      const q = query.trim().toLowerCase();
+      return !q || [s.softwareName, s.vendorName, s.ownerName, s.departmentName, s.category].some((v) => v?.toLowerCase().includes(q));
+    })
+    .sort((a, b) => (a.renewalDate || '9999').localeCompare(b.renewalDate || '9999'));
 
-  const filteredSubs = subscriptions.filter((s) => {
-    if (filterCategory !== 'ALL' && s.category !== filterCategory) return false;
-    if (searchQuery.trim() !== '') {
-      const q = searchQuery.toLowerCase();
-      return (
-        s.softwareName.toLowerCase().includes(q) ||
-        s.vendorName.toLowerCase().includes(q) ||
-        s.departmentName.toLowerCase().includes(q)
-      );
-    }
-    return true;
+  const annualSpend = subscriptions.reduce((sum, s) => sum + s.annualCost, 0);
+  const renewingSoon = subscriptions.filter((s) => {
+    const d = daysUntil(s.renewalDate);
+    return d >= 0 && d <= DECIDE_WINDOW_DAYS;
   });
+  const unusedSeatCost = subscriptions.reduce((sum, s) => sum + (s.seatsTotal > 0 ? (s.annualCost / s.seatsTotal) * s.seatsUnused : 0), 0);
 
-  const totalSaaSAnnual = subscriptions.reduce((acc, s) => acc + s.annualCost, 0);
-  const totalUnusedSeats = subscriptions.reduce((acc, s) => acc + s.seatsUnused, 0);
-  const projectedIdleWaste = subscriptions.reduce((acc, s) => {
-    const perSeatAnnual = s.seatsTotal > 0 ? s.annualCost / s.seatsTotal : 0;
-    return acc + perSeatAnnual * (s.seatsUnused || 0);
-  }, 0);
-  const renewalsWithin60Days = getUpcomingRenewals(subscriptions, 60);
-  const upcomingRenewals = renewalsWithin60Days.length;
-  const renewingSoon = getUpcomingRenewals(subscriptions, 30);
-  const aiToolSubs = subscriptions.filter((s) => s.category === 'AI Tools & Copilots');
-  const aiToolAnnualSpend = aiToolSubs.reduce((acc, s) => acc + s.annualCost, 0);
-
-  // Whatever cycle the user actually pays on, normalize to a monthly and
-  // annual figure so the rest of the app (which reasons in annual terms)
-  // doesn't need to know about billing cycles at all.
-  const cycleMonths = billingCycle === 'Monthly' ? 1 : billingCycle === 'Annual' ? 12 : Math.max(1, Number(customCycleMonths) || 1);
-  const derivedMonthlyCost = Number(amountPaid) / cycleMonths;
-  const derivedAnnualCost = derivedMonthlyCost * 12;
-
-  const resetForm = () => {
-    setToolName('');
-    setVendorName('');
-    setPlanName('Enterprise');
-    setSeatsTotal(50);
-    setSeatsUsed(40);
-    setBillingCycle('Annual');
-    setAmountPaid(250000);
-    setCustomCycleMonths(1);
-    setCategory('Productivity & Collaboration');
-    setDept('');
-    setRenewal('2026-12-31');
-    setEditingId(null);
+  const closeDrawer = () => setDrawerOpen(false);
+  const openDrawer = (id: string) => {
+    setOpenId(id);
+    setEditing(id === 'NEW');
+    setConfirmDelete(false);
+    setDrawerOpen(true);
   };
-
-  const openEdit = (sub: Subscription) => {
-    setToolName(sub.softwareName);
-    setVendorName(sub.vendorName);
-    setPlanName(sub.planName);
-    setSeatsTotal(sub.seatsTotal);
-    setSeatsUsed(sub.seatsUsed);
-    setBillingCycle(sub.billingCycle === 'Custom' ? 'Custom' : sub.billingCycle);
-    setAmountPaid(sub.billingCycle === 'Monthly' ? sub.monthlyCost : sub.billingCycle === 'Custom' ? sub.monthlyCost * (sub.customCycleMonths || 1) : sub.annualCost);
-    setCustomCycleMonths(sub.customCycleMonths || 1);
-    setCategory(sub.category);
-    setDept(sub.departmentName);
-    setRenewal(sub.renewalDate);
-    setEditingId(sub.id);
-    setShowAddModal(true);
+  const openAdd = () => {
+    setForm(emptyForm);
+    openDrawer('NEW');
   };
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const save = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!toolName) return;
-
-    if (editingId && onUpdateSubscription) {
-      onUpdateSubscription(editingId, {
-        softwareName: toolName,
-        vendorName: vendorName || toolName,
-        planName: planName,
-        seatsTotal: Number(seatsTotal),
-        seatsUsed: Number(seatsUsed),
-        seatsUnused: Number(seatsTotal) - Number(seatsUsed),
-        annualCost: Math.round(derivedAnnualCost),
-        monthlyCost: Math.round(derivedMonthlyCost),
-        billingCycle,
-        customCycleMonths: billingCycle === 'Custom' ? Number(customCycleMonths) : undefined,
-        renewalDate: renewal,
-        departmentName: dept || 'Unassigned',
-        category: category,
-        status: Number(seatsUsed) < Number(seatsTotal) * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
-      });
-    } else {
-      onAddSubscription({
-        softwareName: toolName,
-        vendorName: vendorName || toolName,
-        planName: planName,
-        seatsTotal: Number(seatsTotal),
-        seatsUsed: Number(seatsUsed),
-        seatsUnused: Number(seatsTotal) - Number(seatsUsed),
-        annualCost: Math.round(derivedAnnualCost),
-        monthlyCost: Math.round(derivedMonthlyCost),
-        billingCycle,
-        customCycleMonths: billingCycle === 'Custom' ? Number(customCycleMonths) : undefined,
-        renewalDate: renewal,
-        departmentName: dept || 'Unassigned',
-        category: category,
-        status: Number(seatsUsed) < Number(seatsTotal) * 0.5 ? 'UNDERUTILIZED' : 'ACTIVE',
-        currency: 'INR',
-      });
-    }
-
-    resetForm();
-    setShowAddModal(false);
+    const data = fromForm(form);
+    if (openId === 'NEW') onAddSubscription(data);
+    else if (open) onUpdateSubscription?.(open.id, data);
+    closeDrawer();
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
+    <div className="space-y-5 pb-12">
+      <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              SaaS & Software Subscriptions Intelligence
-            </h1>
-            <span className="rounded bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] font-bold text-indigo-700 uppercase tracking-wider">
-              {subscriptions.length} Tracked Tools
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Detect redundant tools, right-size idle software seats, track renewal deadlines, and explore alternatives.
-          </p>
+          <h1 className="text-lg font-semibold text-foreground">Subscriptions</h1>
+          <p className="text-sm text-muted-foreground">Every recurring tool, who owns it, and what happens at renewal.</p>
         </div>
-
-        <button
-          onClick={() => { resetForm(); setShowAddModal(true); }}
-          className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Add SaaS Subscription</span>
-        </button>
+        {canManage && (
+          <Button onClick={openAdd} className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Add subscription
+          </Button>
+        )}
       </div>
 
-      {/* Top SaaS KPIs */}
-      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Total Annual SaaS Spend</div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 tracking-tight">
-            {formatCurrency(totalSaaSAnnual, currency)}
-          </div>
-          <div className="mt-2 text-[11px] text-slate-500">
-            Across {subscriptions.length} enterprise applications
-          </div>
-        </div>
+      <div className="grid grid-cols-1 border bg-card sm:grid-cols-3 sm:divide-x">
+        <Stat label="Annual spend" value={formatCurrency(annualSpend, currency)} note={`${subscriptions.length} tools`} />
+        <Stat
+          label={`Renewing in ${DECIDE_WINDOW_DAYS} days`}
+          value={formatCurrency(renewingSoon.reduce((sum, s) => sum + s.annualCost, 0), currency)}
+          note={`${renewingSoon.length} tools`}
+        />
+        <Stat
+          label="Paid for, unused seats"
+          value={`${formatCurrency(Math.round(unusedSeatCost), currency)}/yr`}
+          note={`${subscriptions.reduce((sum, s) => sum + s.seatsUnused, 0)} seats`}
+        />
+      </div>
 
-        <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-violet-800 font-medium">
-            <span>AI Tool Spend</span>
-            <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-800">
-              {aiToolSubs.length} TOOL{aiToolSubs.length === 1 ? '' : 'S'}
-            </span>
-          </div>
-          <div className="mt-2 text-2xl font-bold text-violet-900 tracking-tight">
-            {formatCurrency(aiToolAnnualSpend, currency)}
-          </div>
-          <div className="mt-2 text-[11px] text-violet-700">
-            {aiToolSubs.length > 0
-              ? `${Math.round((aiToolAnnualSpend / (totalSaaSAnnual || 1)) * 100)}% of total SaaS spend`
-              : 'Tag a subscription as "AI Tools & Copilots" to track it'}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>Unassigned & Idle Licenses</span>
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-              {totalUnusedSeats} SEATS
-            </span>
-          </div>
-          <div className="mt-2 text-2xl font-bold text-amber-700 tracking-tight">
-            {totalUnusedSeats} Idle Seats
-          </div>
-          <div className="mt-2 text-[11px] text-amber-600 font-medium">
-            {totalUnusedSeats > 0
-              ? `Projected waste: ~${formatCurrency(projectedIdleWaste, currency, true)}/yr in unused seats`
-              : 'No idle seats detected'}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-          <div className="text-xs text-slate-500 font-medium">Upcoming Renewals (&lt; 60 Days)</div>
-          <div className="mt-2 text-2xl font-bold text-indigo-700 tracking-tight">
-            {upcomingRenewals} Contract{upcomingRenewals === 1 ? '' : 's'}
-          </div>
-          <div className="mt-2 text-[11px] text-slate-500">
-            Optimal window to renegotiate or downgrade
-          </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={view} onValueChange={(v) => setView(v as View)}>
+          <TabsList>
+            <TabsTrigger value="ALL">All {counts.ALL}</TabsTrigger>
+            <TabsTrigger value="DECIDE">Needs decision {counts.DECIDE}</TabsTrigger>
+            <TabsTrigger value="NO_OWNER">No owner {counts.NO_OWNER}</TabsTrigger>
+            <TabsTrigger value="UNUSED">Unused seats {counts.UNUSED}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative sm:w-64">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search tools, owners, teams" className="pl-7" />
         </div>
       </div>
 
-      {/* Renewing Soon — actionable alert, not just a stat */}
-      {renewingSoon.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-2.5">
-          <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
-            <Calendar className="h-3.5 w-3.5 text-amber-600" />
-            <span>Renewing in the next 30 days</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {renewingSoon.map((sub) => {
-              const d = daysUntil(sub.renewalDate);
-              return (
-                <div
-                  key={sub.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs"
-                >
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-900 truncate">{sub.softwareName}</div>
-                    <div className="text-[10px] text-slate-500">{formatCurrency(sub.annualCost, currency, true)}/yr</div>
-                  </div>
-                  <span
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                      d <= 7 ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'
-                    }`}
-                  >
-                    {d === 0 ? 'Today' : d === 1 ? '1 day' : `${d} days`}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Filter & Search */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setFilterCategory(cat)}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                filterCategory === cat
-                  ? 'bg-slate-900 text-white font-semibold shadow-2xs'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search software, vendor, plan..."
-            className="rounded-lg border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none"
-          />
-        </div>
-      </div>
-
-      {/* SaaS Table */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px]">
-                <th className="py-3 px-4 font-semibold">Software / Application</th>
-                <th className="py-3 px-4 font-semibold">Department</th>
-                <th className="py-3 px-4 font-semibold">Seat Utilization</th>
-                <th className="py-3 px-4 font-semibold">Annual Cost</th>
-                <th className="py-3 px-4 font-semibold">Renewal Date</th>
-                <th className="py-3 px-4 font-semibold">Status</th>
-                <th className="py-3 px-4 font-semibold">AI Intelligence Alert</th>
-                <th className="py-3 px-4 font-semibold text-right">Action</th>
-                {canManage && <th className="py-3 px-4 font-semibold text-right">Manage</th>}
+      <div className="overflow-x-auto border bg-card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs text-muted-foreground">
+              <th className="px-4 py-2.5 font-medium">Tool</th>
+              <th className="px-4 py-2.5 font-medium">Owner</th>
+              <th className="px-4 py-2.5 text-right font-medium">Per month</th>
+              <th className="px-4 py-2.5 font-medium">Renews</th>
+              <th className="px-4 py-2.5 font-medium">Notice by</th>
+              <th className="px-4 py-2.5 text-right font-medium">Seats used</th>
+              <th className="px-4 py-2.5 font-medium">Decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  {subscriptions.length === 0 ? (
+                    <div className="space-y-3">
+                      <p>No subscriptions yet. Add the tools you pay for to see renewals, owners and unused seats.</p>
+                      {canManage && <Button variant="outline" onClick={openAdd}>Add your first subscription</Button>}
+                    </div>
+                  ) : view === 'ALL' ? (
+                    'Nothing matches your search.'
+                  ) : (
+                    'Nothing here. You’re all caught up.'
+                  )}
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredSubs.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-xs text-slate-500">
-                    {subscriptions.length === 0 ? (
-                      <>
-                        No subscriptions tracked yet.{' '}
-                        <button onClick={() => { resetForm(); setShowAddModal(true); }} className="font-semibold text-blue-600 hover:text-blue-700">
-                          Add your first subscription
-                        </button>
-                      </>
+            )}
+            {rows.map((s) => {
+              const notice = noticeBy(s);
+              const urgent = isUrgent(s);
+              return (
+                <tr
+                  key={s.id}
+                  tabIndex={0}
+                  onClick={() => openDrawer(s.id)}
+                  onKeyDown={(e) => e.key === 'Enter' && openDrawer(s.id)}
+                  className="cursor-pointer border-b last:border-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                >
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-foreground">{s.softwareName}</div>
+                    <div className="text-xs text-muted-foreground">{[s.vendorName !== s.softwareName && s.vendorName, s.planName].filter(Boolean).join(' · ') || s.category}</div>
+                  </td>
+                  <td className="px-4 py-3">{s.ownerName || <span className="text-muted-foreground">No owner</span>}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(s.monthlyCost, currency)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {formatDate(s.renewalDate)}
+                    <span className="ml-1.5 text-xs text-muted-foreground">{relative(s.renewalDate)}</span>
+                  </td>
+                  <td className={cn('px-4 py-3 whitespace-nowrap', urgent && 'font-medium text-destructive')}>
+                    {s.noticePeriodDays ? formatDate(notice) : <span className="text-muted-foreground">—</span>}
+                    {urgent && daysUntil(notice) < 0 && <span className="ml-1.5 text-xs">missed</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {s.seatsTotal > 0 ? `${s.seatsUsed} / ${s.seatsTotal}` : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    {s.decision ? (
+                      <Badge variant={s.decision === 'CANCEL' ? 'destructive' : 'outline'}>{DECISIONS.find((d) => d.value === s.decision)?.label}</Badge>
+                    ) : needsDecision(s) ? (
+                      <span className={cn('text-xs', urgent ? 'text-destructive' : 'text-foreground')}>Needs decision</span>
                     ) : (
-                      'No subscriptions match the current filters.'
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
                 </tr>
-              )}
-              {filteredSubs.map((sub) => {
-                const usedPct = Math.round((sub.seatsUsed / (sub.seatsTotal || 1)) * 100);
-                return (
-                  <tr key={sub.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-slate-900">
-                      <div>{sub.softwareName}</div>
-                      <div className="text-[10px] text-slate-400 font-normal">{sub.vendorName} • {sub.planName}</div>
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-600">{sub.departmentName}</td>
-                    <td className="py-3.5 px-4">
-                      <div className="space-y-1 max-w-[140px]">
-                        <div className="flex justify-between text-[10px] text-slate-600">
-                          <span>{sub.seatsUsed} / {sub.seatsTotal} ({usedPct}%)</span>
-                          <span className="font-semibold text-amber-700">{sub.seatsUnused} idle</span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              usedPct > 80 ? 'bg-emerald-500' : usedPct > 50 ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}
-                            style={{ width: `${usedPct}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-bold text-slate-900">
-                      {formatCurrency(sub.annualCost, currency)}
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-500 font-medium">{sub.renewalDate}</td>
-                    <td className="py-3.5 px-4">
-                      <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(sub.status)}`}>
-                        {sub.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 max-w-xs">
-                      {sub.aiAlert ? (
-                        <div className="rounded bg-amber-50 border border-amber-200/80 p-1.5 text-[10px] text-amber-900">
-                          <div className="font-bold">
-                            Save {formatCurrency(sub.aiAlert.potentialSavingAnnual, currency, true)}/yr:
-                          </div>
-                          <div>{sub.aiAlert.explanation}</div>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">Normal utilization</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() =>
-                          onOpenAlternativeEngine({
-                            itemName: sub.softwareName,
-                            itemType: 'Software & SaaS',
-                            currentCost: sub.annualCost,
-                            currentVendor: sub.vendorName,
-                          })
-                        }
-                        className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
-                      >
-                        Compare
-                      </button>
-                    </td>
-                    {canManage && (
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => openEdit(sub)}
-                            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50"
-                            title="Edit subscription"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setConfirmDeleteId(sub.id)}
-                            className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50"
-                            title="Delete subscription"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
-      {/* Delete Confirm Modal */}
-      {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="font-bold text-slate-900 text-sm">Remove this subscription?</div>
-            <p className="text-xs text-slate-500">This can't be undone. Removal is recorded in the audit trail with your name.</p>
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600">
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (onDeleteSubscription && confirmDeleteId) onDeleteSubscription(confirmDeleteId);
-                  setConfirmDeleteId(null);
-                }}
-                className="rounded-lg bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <datalist id="owner-suggestions">
+        {ownerSuggestions.map((n) => <option key={n} value={n} />)}
+      </datalist>
 
-      {/* Add Subscription Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in-0 zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="font-bold text-slate-900 text-sm">{editingId ? 'Edit SaaS Subscription' : 'Add New SaaS Subscription'}</div>
-              <button onClick={() => { resetForm(); setShowAddModal(false); }} className="text-xs text-slate-400">✕</button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Software Name</label>
-                <input
-                  type="text"
-                  required
-                  value={toolName}
-                  onChange={(e) => setToolName(e.target.value)}
-                  placeholder="e.g. Asana / HubSpot"
-                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Total Paid Seats</label>
-                  <input
-                    type="number"
-                    value={seatsTotal}
-                    onChange={(e) => setSeatsTotal(Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Actively Used Seats</label>
-                  <input
-                    type="number"
-                    value={seatsUsed}
-                    onChange={(e) => setSeatsUsed(Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Billing Cycle</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['Monthly', 'Annual', 'Custom'] as const).map((cycle) => (
-                    <button
-                      key={cycle}
-                      type="button"
-                      onClick={() => setBillingCycle(cycle)}
-                      className={`rounded-lg border p-2 text-center font-semibold transition-colors ${
-                        billingCycle === cycle
-                          ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {cycle}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">
-                    {billingCycle === 'Monthly' ? `Cost per month (${currency})` : billingCycle === 'Annual' ? `Cost per year (${currency})` : `Amount paid (${currency})`}
-                  </label>
-                  <input
-                    type="number"
-                    value={amountPaid}
-                    onChange={(e) => setAmountPaid(Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                  />
-                </div>
-                {billingCycle === 'Custom' ? (
-                  <div>
-                    <label className="block font-medium text-slate-700 mb-1">Covers how many months?</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={customCycleMonths}
-                      onChange={(e) => setCustomCycleMonths(Number(e.target.value))}
-                      className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block font-medium text-slate-700 mb-1">Renewal Date</label>
-                    <input
-                      type="date"
-                      value={renewal}
-                      onChange={(e) => setRenewal(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {billingCycle === 'Custom' && (
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">Renewal Date</label>
-                  <input
-                    type="date"
-                    value={renewal}
-                    onChange={(e) => setRenewal(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                  />
-                </div>
-              )}
-
-              {amountPaid > 0 && (
-                <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-[11px] text-slate-600">
-                  ≈ <span className="font-semibold text-slate-900">{formatCurrency(Math.round(derivedMonthlyCost), currency)}/mo</span>{' '}
-                  · <span className="font-semibold text-slate-900">{formatCurrency(Math.round(derivedAnnualCost), currency)}/yr</span> once annualized
-                </div>
-              )}
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                >
-                  {categories
-                    .filter((c) => c !== 'ALL')
-                    .map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 mb-1">Department</label>
-                {departments.length > 0 ? (
-                  <select
-                    value={dept}
-                    onChange={(e) => setDept(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                  >
-                    <option value="">Select…</option>
-                    {departments.map((d) => (
-                      <option key={d.name} value={d.name}>
-                        {d.name}
-                      </option>
-                    ))}
+      <Sheet open={drawerOpen} onOpenChange={(o) => !o && closeDrawer()}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+          {editing ? (
+            <form onSubmit={save} className="flex min-h-full flex-col">
+              <SheetHeader>
+                <SheetTitle>{openId === 'NEW' ? 'Add subscription' : `Edit ${open?.softwareName}`}</SheetTitle>
+                <SheetDescription>Cost is what you pay each billing cycle; we work out the monthly and yearly figures.</SheetDescription>
+              </SheetHeader>
+              <div className="grid grid-cols-2 gap-3 px-4">
+                <Field label="Tool name" className="col-span-2">
+                  <Input required value={form.softwareName} onChange={set('softwareName')} placeholder="e.g. Notion" />
+                </Field>
+                <Field label="Vendor">
+                  <Input value={form.vendorName} onChange={set('vendorName')} placeholder="Same as tool" />
+                </Field>
+                <Field label="Plan">
+                  <Input value={form.planName} onChange={set('planName')} placeholder="e.g. Business" />
+                </Field>
+                <Field label="Owner">
+                  <Input value={form.ownerName} onChange={set('ownerName')} list="owner-suggestions" placeholder="Who answers for it" />
+                </Field>
+                <Field label="Team">
+                  {departments.length > 0 ? (
+                    <select value={form.departmentName} onChange={set('departmentName')} className={selectClass}>
+                      <option value="">Unassigned</option>
+                      {departments.map((d) => <option key={d.name}>{d.name}</option>)}
+                    </select>
+                  ) : (
+                    <Input value={form.departmentName} onChange={set('departmentName')} placeholder="e.g. Engineering" />
+                  )}
+                </Field>
+                <Field label="Category" className="col-span-2">
+                  <select value={form.category} onChange={set('category')} className={selectClass}>
+                    {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                   </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={dept}
-                    onChange={(e) => setDept(e.target.value)}
-                    placeholder="e.g. Engineering"
-                    className="w-full rounded-lg border border-slate-200 p-2 text-slate-900 focus:outline-none"
-                  />
+                </Field>
+                <Field label="Billing cycle">
+                  <select value={form.billingCycle} onChange={set('billingCycle')} className={selectClass}>
+                    <option>Monthly</option>
+                    <option>Annual</option>
+                    <option value="Custom">Other</option>
+                  </select>
+                </Field>
+                <Field label={`Cost per cycle (${currency})`}>
+                  <Input required type="number" min={0} value={form.amount} onChange={set('amount')} />
+                </Field>
+                {form.billingCycle === 'Custom' && (
+                  <Field label="Cycle length (months)" className="col-span-2">
+                    <Input type="number" min={1} value={form.customCycleMonths} onChange={set('customCycleMonths')} />
+                  </Field>
                 )}
+                <Field label="Next renewal">
+                  <Input required type="date" value={form.renewalDate} onChange={set('renewalDate')} />
+                </Field>
+                <Field label="Notice period (days)">
+                  <Input type="number" min={0} value={form.noticePeriodDays} onChange={set('noticePeriodDays')} placeholder="From the contract" />
+                </Field>
+                <Field label="Seats paid for">
+                  <Input type="number" min={0} value={form.seatsTotal} onChange={set('seatsTotal')} />
+                </Field>
+                <Field label="Seats in use">
+                  <Input type="number" min={0} value={form.seatsUsed} onChange={set('seatsUsed')} />
+                </Field>
               </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => { resetForm(); setShowAddModal(false); }}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600"
-                >
+              <SheetFooter className="mt-auto flex-row justify-end">
+                <Button type="button" variant="outline" onClick={() => (openId === 'NEW' ? closeDrawer() : setEditing(false))}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-1.5 font-semibold text-white"
-                >
-                  {editingId ? 'Save Changes' : 'Save Subscription'}
-                </button>
-              </div>
+                </Button>
+                <Button type="submit">{openId === 'NEW' ? 'Add subscription' : 'Save changes'}</Button>
+              </SheetFooter>
             </form>
-          </div>
-        </div>
-      )}
+          ) : (
+            open && (
+              <div className="flex min-h-full flex-col">
+                <SheetHeader>
+                  <SheetTitle className="text-base">{open.softwareName}</SheetTitle>
+                  <SheetDescription>{[open.vendorName, open.planName, open.category].filter(Boolean).join(' · ')}</SheetDescription>
+                </SheetHeader>
+
+                <div className="space-y-6 px-4">
+                  <section className="space-y-2">
+                    <h3 className="text-xs font-medium text-muted-foreground">Decision for next renewal</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {DECISIONS.map((d) => (
+                        <Button
+                          key={d.value}
+                          variant={open.decision === d.value ? 'default' : 'outline'}
+                          disabled={!canManage}
+                          onClick={() => onUpdateSubscription?.(open.id, { decision: open.decision === d.value ? undefined : d.value })}
+                        >
+                          {d.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {open.noticePeriodDays && daysUntil(noticeBy(open)) < 0
+                        ? `The notice deadline (${formatDate(noticeBy(open))}) has passed. Check the contract; you may be locked in for another term.`
+                        : open.noticePeriodDays
+                        ? `Tell the vendor by ${formatDate(noticeBy(open))} (${relative(noticeBy(open))}) if you're not renewing as-is.`
+                        : 'Add the notice period from the contract so we can warn you before the deadline.'}
+                    </p>
+                  </section>
+
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    <Fact label="Per month" value={formatCurrency(open.monthlyCost, currency)} />
+                    <Fact label="Per year" value={formatCurrency(open.annualCost, currency)} />
+                    <Fact label="Renews" value={`${formatDate(open.renewalDate)} (${relative(open.renewalDate)})`} />
+                    <Fact label="Billing" value={open.billingCycle === 'Custom' ? `Every ${open.customCycleMonths} months` : open.billingCycle} />
+                    <Fact label="Seats" value={open.seatsTotal > 0 ? `${open.seatsUsed} used of ${open.seatsTotal}` : 'Not tracked'} />
+                    <Fact label="Team" value={open.departmentName || 'Unassigned'} />
+                  </dl>
+
+                  <section className="space-y-2">
+                    <Label htmlFor="owner-inline" className="text-xs font-medium text-muted-foreground">Owner</Label>
+                    <Input
+                      id="owner-inline"
+                      key={open.id}
+                      defaultValue={open.ownerName}
+                      list="owner-suggestions"
+                      placeholder="Assign someone who answers for this tool"
+                      disabled={!canManage}
+                      onBlur={(e) => e.target.value.trim() !== open.ownerName && onUpdateSubscription?.(open.id, { ownerName: e.target.value.trim() })}
+                    />
+                  </section>
+
+                  {open.aiAlert && (
+                    <section className="space-y-1 border p-3">
+                      <h3 className="text-xs font-medium text-muted-foreground">
+                        Possible saving: {formatCurrency(open.aiAlert.potentialSavingAnnual, currency)}/yr
+                      </h3>
+                      <p className="text-sm">{open.aiAlert.explanation}</p>
+                      {open.aiAlert.alternativeSuggestion && <p className="text-xs text-muted-foreground">Try: {open.aiAlert.alternativeSuggestion}</p>}
+                    </section>
+                  )}
+                </div>
+
+                <SheetFooter className="mt-auto flex-row flex-wrap">
+                  <Button
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() =>
+                      onOpenAlternativeEngine({ itemName: open.softwareName, itemType: 'Software & SaaS', currentCost: open.annualCost, currentVendor: open.vendorName })
+                    }
+                  >
+                    <ArrowLeftRight className="h-4 w-4" />
+                    Compare alternatives
+                  </Button>
+                  {canManage && (
+                    <>
+                      <Button variant="outline" className="gap-1.5" onClick={() => { setForm(toForm(open)); setEditing(true); }}>
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant={confirmDelete ? 'destructive' : 'ghost'}
+                        className="ml-auto gap-1.5"
+                        onClick={() => {
+                          if (!confirmDelete) return setConfirmDelete(true);
+                          onDeleteSubscription?.(open.id);
+                          closeDrawer();
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {confirmDelete ? 'Click again to delete' : 'Delete'}
+                      </Button>
+                    </>
+                  )}
+                </SheetFooter>
+              </div>
+            )
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };
+
+const Stat = ({ label, value, note }: { label: string; value: string; note: string }) => (
+  <div className="px-4 py-3">
+    <div className="text-xs text-muted-foreground">{label}</div>
+    <div className="mt-1 text-xl font-semibold tabular-nums text-foreground">{value}</div>
+    <div className="text-xs text-muted-foreground">{note}</div>
+  </div>
+);
+
+const Field = ({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) => (
+  <label className={cn('space-y-1', className)}>
+    <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+    {children}
+  </label>
+);
+
+const Fact = ({ label, value }: { label: string; value: string }) => (
+  <div>
+    <dt className="text-xs text-muted-foreground">{label}</dt>
+    <dd className="text-foreground tabular-nums">{value}</dd>
+  </div>
+);
